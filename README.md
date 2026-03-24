@@ -19,7 +19,8 @@ Formal statements and proofs of the 2025 Putnam Competition problems in Rocq.
 
 **10/12 verified**
 
-We used Claude code with Opus 4.6 (High effort) and the [Rocq-MCP V2](https://github.com/LLM4Rocq/rocq-mcp).
+We used Claude code with Opus 4.6 (High effort) and the [Rocq-MCP](https://github.com/LLM4Rocq/rocq-mcp).
+More details about our experiment in [Putnam 2025 Problems in Rocq using Opus 4.6 and Rocq-MCP](https://arxiv.org/abs/2603.20405)
 
 ## Structure
 
