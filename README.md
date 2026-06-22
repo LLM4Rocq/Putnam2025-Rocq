@@ -15,9 +15,9 @@ Formal statements and proofs of the 2025 Putnam Competition problems in Rocq.
 | putnam_2025_b3 | ✅ | Classical_Prop.classic |
 | putnam_2025_b4 | ✅ |  |
 | putnam_2025_b5 | ✅ |  |
-| putnam_2025_b6 | ❌ |  |
+| putnam_2025_b6 | ✅ | ClassicalDedekindReals.sig_not_dec, ClassicalDedekindReals.sig_forall_dec, FunctionalExtensionality.functional_extensionality_dep, Classical_Prop.classic |
 
-**10/12 verified**
+**11/12 verified**
 
 We used Claude code with Opus 4.6 (High effort) and the [Rocq-MCP](https://github.com/LLM4Rocq/rocq-mcp).
 More details about our experiment in [Putnam 2025 Problems in Rocq using Opus 4.6 and Rocq-MCP](https://arxiv.org/abs/2603.20405)

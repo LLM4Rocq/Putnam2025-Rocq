@@ -1,1160 +1,1132 @@
-From Stdlib Require Import Reals Rpower Lra Rfunctions PeanoNat Lia Psatz.
-From Stdlib Require Import Classical ClassicalChoice ZArith.
+(** Putnam 2025 B6.
+    Find the largest real constant r such that there exists g : N -> N
+    with g(n+1) - g(n) >= g(g(n))^r for all n >= 1.
+    Answer: r = 1/4.
+
+    We state this as: 1/4 is the supremum of the set of r for which
+    such a g exists. *)
+
+From Stdlib Require Import Reals Rpower Lia Lra.
 Open Scope R_scope.
 
+(** The set of valid exponents. *)
 Definition valid_exponent (r : R) : Prop :=
   exists g : nat -> nat,
     (forall n, (n > 0)%nat -> (g n > 0)%nat) /\
     (forall n, (n >= 1)%nat ->
        INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r).
 
-(* ================================================================ *)
-(*                  PART 1: EXISTENCE (r = 1/4)                     *)
-(* Witness: g(n) = n^2.                                             *)
-(* g(g(n)) = n^4, g(n+1) - g(n) = 2n+1, Rpower(n^4, 1/4) = n.     *)
-(* Since 2n+1 >= n for n >= 1, the bound holds.                     *)
-(* ================================================================ *)
+(** Secant bound for concave Rpower.
+    Proof: (1+t)^p lies above the secant from (0,1) to (1,2^p)
+    because x^p is concave for 0 < p <= 1. We derive a contradiction
+    from the assumption h(t0) < 0 using three MVT applications:
+    two for h (getting h'(c1) < 0, h'(c2) > 0 with c1 < c2)
+    and one for h' (showing h' is decreasing). *)
 
-Lemma valid_exponent_quarter : valid_exponent (1/4).
+Lemma secant_bound : forall p t : R,
+  0 < p -> p <= 1 -> 0 <= t -> t <= 1 ->
+  Rpower (1 + t) p >= 1 + t * (Rpower 2 p - 1).
 Proof.
-  exists (fun n => Nat.mul n n).
-  split.
-  - intros n Hn. simpl. lia.
-  - intros n Hn.
-    change ((fun n0 => Nat.mul n0 n0) (S n)) with (S n * S n)%nat.
-    change ((fun n0 => Nat.mul n0 n0) n) with (n * n)%nat.
-    change ((fun n0 => Nat.mul n0 n0) ((fun n0 => Nat.mul n0 n0) n))
-      with ((n * n) * (n * n))%nat.
-    rewrite !mult_INR. rewrite S_INR.
-    assert (Hpos : 0 < INR n) by (apply lt_0_INR; lia).
-    assert (Heq : INR n * INR n * (INR n * INR n) = (INR n) ^ 4) by (simpl; ring).
-    rewrite Heq.
-    rewrite <- Rpower_pow; [|exact Hpos].
-    rewrite Rpower_mult.
-    replace (INR 4 * (1 / 4)) with 1 by (simpl; lra).
-    rewrite Rpower_1; [|exact Hpos].
-    nra.
-Qed.
-
-(* ================================================================ *)
-(*            PART 2: UPPER BOUND (r <= 1/4)                        *)
-(* ================================================================ *)
-
-(* --------- Auxiliary real analysis lemmas --------- *)
-
-Lemma Rpower_base1 : forall r, Rpower 1 r = 1.
-Proof.
-  intros r. unfold Rpower. rewrite ln_1. rewrite Rmult_0_r. apply exp_0.
-Qed.
-
-Lemma INR_ge : forall a b : nat, (a >= b)%nat -> INR a >= INR b.
-Proof. intros a b H. assert (INR b <= INR a) by (apply le_INR; lia). lra. Qed.
-
-Lemma INR_ge_nat : forall a b : nat, INR a >= INR b -> (a >= b)%nat.
-Proof. intros a b H. assert (INR b <= INR a) by lra. apply INR_le in H0. lia. Qed.
-
-(* Rpower(n, a) >= n when n >= 2 and a >= 1 *)
-Lemma rpower_ge_base : forall N a, (N >= 2)%nat -> a >= 1 -> Rpower (INR N) a >= INR N.
-Proof.
-  intros N a HN Ha.
-  assert (Hpos : 0 < INR N) by (apply lt_0_INR; lia).
-  assert (HN_gt1 : INR N > 1) by (assert (H := lt_INR 1 N ltac:(lia)); simpl in H; lra).
-  assert (Rpower (INR N) 1 <= Rpower (INR N) a).
-  { destruct (Req_dec a 1); [subst; lra | left; apply Rpower_lt; lra]. }
-  rewrite Rpower_1 in H; [lra|exact Hpos].
-Qed.
-
-(* --------- The discriminant argument --------- *)
-
-Lemma quadratic_positive : forall r x,
-  r > 1/4 -> r * x^2 - x + 1 > 0.
-Proof.
-  intros r x Hr.
-  assert (Hmul : 4*r*(r * x^2 - x + 1) = (2*r*x - 1)^2 + (4*r - 1)) by ring.
-  assert (H1 : (2*r*x - 1)^2 >= 0) by (apply Rle_ge; apply pow2_ge_0).
-  assert (H2 : 4*r - 1 > 0) by lra.
-  apply Rmult_lt_reg_l with (4*r); lra.
-Qed.
-
-Lemma quadratic_lower_bound : forall r x,
-  r > 1/4 -> r * x^2 - x + 1 >= 1 - 1/(4*r).
-Proof.
-  intros r x Hr.
-  assert (Hr0 : r > 0) by lra.
-  assert (H : r * x^2 - x + 1 - (1 - 1/(4*r)) = r * (x - 1/(2*r))^2).
-  { field. lra. }
-  assert (H2 : r * (x - 1/(2*r))^2 >= 0).
-  { assert ((x - 1/(2*r))^2 >= 0) by (apply Rle_ge; apply pow2_ge_0). nra. }
+  intros p t Hp Hp1 Ht0 Ht1.
+  (* Case p = 1: trivial (equality) *)
+  destruct (Req_dec p 1) as [->|Hp1'].
+  { unfold Rpower. rewrite Rmult_1_l, Rmult_1_l.
+    rewrite exp_ln by lra. rewrite exp_ln by lra.
+    lra. }
+  assert (Hp_lt1 : p < 1) by lra.
+  (* Derivative of (1+s)^p w.r.t. s *)
+  assert (Hderiv : forall s, 0 <= s ->
+    derivable_pt_lim (fun s => Rpower (1 + s) p) s
+      (p * Rpower (1 + s) (p - 1))).
+  { intros s Hs.
+    assert (Hd : derivable_pt_lim
+      (comp (fun x => Rpower x p) (fun s => 1 + s)) s
+      (p * Rpower (1+s) (p-1) * 1)).
+    { assert (Hd1 : derivable_pt_lim
+        (fun s => 1 + s) s 1).
+      { intros eps Heps.
+        exists (mkposreal 1 Rlt_0_1).
+        intros h0 Hh0 _.
+        replace ((1 + (s+h0) - (1+s)) / h0 - 1)
+          with 0 by (field; exact Hh0).
+        rewrite Rabs_R0. exact Heps. }
+      apply derivable_pt_lim_comp.
+      - exact Hd1.
+      - apply derivable_pt_lim_power. lra. }
+    unfold comp in Hd.
+    replace (p * Rpower (1+s) (p-1) * 1)
+      with (p * Rpower (1+s) (p-1)) in Hd by ring.
+    exact Hd. }
+  (* h(s) = (1+s)^p - 1 - s*(2^p - 1) *)
+  set (h := fun s => Rpower (1+s) p - 1 - s*(Rpower 2 p - 1)).
+  assert (Hh0 : h 0 = 0).
+  { unfold h. replace (1+0) with 1 by ring.
+    unfold Rpower. rewrite ln_1, Rmult_0_r, exp_0. ring. }
+  assert (Hh1 : h 1 = 0).
+  { unfold h. replace (1+1) with 2 by ring. ring. }
+  (* h is differentiable with
+     h'(s) = p*(1+s)^(p-1) - (2^p - 1) *)
+  assert (Hderiv_h : forall s, 0 <= s -> s <= 1 ->
+    derivable_pt_lim h s
+      (p * Rpower (1+s) (p-1) - (Rpower 2 p - 1))).
+  { intros s Hs0 Hs1.
+    intros eps Heps.
+    destruct (Hderiv s Hs0 eps Heps) as [delta Hdlt].
+    exists delta. intros dh Hdh Hdabs.
+    specialize (Hdlt dh Hdh Hdabs).
+    replace ((h (s + dh) - h s) / dh -
+             (p * Rpower (1+s) (p-1) - (Rpower 2 p - 1)))
+      with (((fun s => Rpower (1+s) p) (s+dh) -
+             (fun s => Rpower (1+s) p) s) / dh -
+            p * Rpower (1+s) (p-1))
+      by (unfold h; field; exact Hdh).
+    exact Hdlt. }
+  (* h' is differentiable with
+     h''(s) = p*(p-1)*(1+s)^(p-2) *)
+  set (h' := fun s =>
+    p * Rpower (1+s) (p-1) - (Rpower 2 p - 1)).
+  (* Derivative of Rpower(1+s)(p-1) via chain rule *)
+  assert (Hderiv2 : forall s, 0 <= s ->
+    derivable_pt_lim (fun s => Rpower (1+s) (p-1)) s
+      ((p-1) * Rpower (1+s) (p-2))).
+  { intros s Hs.
+    assert (Hd1 : derivable_pt_lim (fun s => 1+s) s 1).
+    { intros eps Heps.
+      exists (mkposreal 1 Rlt_0_1).
+      intros dh Hdh _.
+      replace ((1+(s+dh)-(1+s))/dh - 1)
+        with 0 by (field; exact Hdh).
+      rewrite Rabs_R0. exact Heps. }
+    assert (Hd := derivable_pt_lim_comp
+      _ _ s 1 ((p-1)*Rpower(1+s)((p-1)-1))
+      Hd1
+      (derivable_pt_lim_power (1+s) (p-1) ltac:(lra))).
+    unfold comp in Hd.
+    assert (Heq : (p-1)-1 = p-2) by lra.
+    rewrite Heq in Hd.
+    replace ((p-1)*Rpower(1+s)(p-2)*1)
+      with ((p-1)*Rpower(1+s)(p-2)) in Hd by ring.
+    exact Hd. }
+  assert (Hderiv_h' : forall s, 0 <= s -> s <= 1 ->
+    derivable_pt_lim h' s
+      (p * (p-1) * Rpower (1+s) (p-2))).
+  { intros s Hs0 Hs1.
+    intros eps Heps.
+    assert (Heps' : 0 < eps / p)
+      by (apply Rdiv_lt_0_compat; lra).
+    destruct (Hderiv2 s Hs0 (eps/p) Heps')
+      as [delta Hdlt].
+    exists delta. intros dh Hdh Hdabs.
+    specialize (Hdlt dh Hdh Hdabs).
+    replace ((h' (s+dh) - h' s) / dh -
+             p*(p-1)*Rpower(1+s)(p-2))
+      with (p * (((fun s => Rpower(1+s)(p-1)) (s+dh) -
+                  (fun s => Rpower(1+s)(p-1)) s) / dh -
+                 (p-1)*Rpower(1+s)(p-2)))
+      by (unfold h'; field; exact Hdh).
+    rewrite Rabs_mult.
+    rewrite (Rabs_pos_eq p ltac:(lra)).
+    apply Rlt_le_trans with (p * (eps/p)).
+    - apply Rmult_lt_compat_l; [lra|exact Hdlt].
+    - right. field. lra. }
+  (* h'' < 0, so h' is strictly decreasing *)
+  assert (Hdecr : forall a b, 0 <= a -> b <= 1 ->
+    a < b -> h' b < h' a).
+  { intros a b Ha Hb Hab.
+    destruct (MVT_cor2 h' (fun s =>
+      p*(p-1)*Rpower(1+s)(p-2)) a b Hab) as
+      [c [Heq [Hca Hcb]]].
+    { intros c [Hc1 Hc2].
+      apply Hderiv_h'; lra. }
+    assert (p*(p-1)*Rpower(1+c)(p-2) < 0).
+    { assert (0 < Rpower (1+c) (p-2)) by
+        (unfold Rpower; apply exp_pos).
+      assert (p*(p-1) < 0).
+      { apply Rmult_pos_neg; lra. }
+      assert (0 < Rpower (1+c) (p-2)) by
+        (unfold Rpower; apply exp_pos).
+      nra. }
+    assert (b - a > 0) by lra.
+    assert (p*(p-1)*Rpower(1+c)(p-2)*(b-a) < 0).
+    { apply Rmult_neg_pos; lra. }
+    lra. }
+  (* Main proof by contradiction *)
+  apply Rnot_lt_ge. intro Hlt.
+  assert (Hlt0 : h t < 0) by (unfold h; lra).
+  (* Case t = 0: h(0) = 0, contradiction *)
+  destruct (Req_dec t 0) as [->|Ht_ne0].
+  { rewrite Hh0 in Hlt0. lra. }
+  (* Case t = 1: h(1) = 0, contradiction *)
+  destruct (Req_dec t 1) as [->|Ht_ne1].
+  { rewrite Hh1 in Hlt0. lra. }
+  assert (Ht_in : 0 < t < 1) by lra.
+  (* MVT on [0, t]: h(t) - h(0) = h'(c1) * t *)
+  destruct (MVT_cor2 h h' 0 t ltac:(lra)) as
+    [c1 [Heq1 [Hc1a Hc1b]]].
+  { intros c [Hc1 Hc2].
+    apply Hderiv_h; lra. }
+  (* h'(c1) < 0 *)
+  assert (Hh'c1 : h' c1 < 0).
+  { rewrite Hh0 in Heq1.
+    assert (h' c1 * t = h t) by lra.
+    assert (h' c1 * t < 0) by lra.
+    (* t > 0, h'(c1)*t < 0 => h'(c1) < 0 *)
+    destruct (Rlt_or_le (h' c1) 0) as [|Hge]; [lra|].
+    exfalso. assert (0 <= h' c1 * t) by nra. lra. }
+  (* MVT on [t, 1]: h(1) - h(t) = h'(c2) * (1-t) *)
+  destruct (MVT_cor2 h h' t 1 ltac:(lra)) as
+    [c2 [Heq2 [Hc2a Hc2b]]].
+  { intros c [Hc1 Hc2].
+    apply Hderiv_h; lra. }
+  (* h'(c2) > 0 *)
+  assert (Hh'c2 : h' c2 > 0).
+  { rewrite Hh1 in Heq2.
+    assert (h' c2 * (1 - t) = - h t) by lra.
+    assert (h' c2 * (1 - t) > 0) by lra.
+    destruct (Rlt_or_le 0 (h' c2)) as [|Hle]; [lra|].
+    exfalso. assert (h' c2 * (1 - t) <= 0) by nra.
+    lra. }
+  (* h'(c1) < 0 < h'(c2) but h' is decreasing: *)
+  assert (h' c2 < h' c1) by (apply Hdecr; lra).
   lra.
 Qed.
-
-Lemma inv_4r_lt_1 : forall r, r > 1/4 -> 1/(4*r) < 1.
-Proof.
-  intros r Hr. unfold Rdiv. rewrite Rmult_1_l.
-  rewrite <- Rinv_1. apply Rinv_lt_contravar; lra.
-Qed.
-
-(* --------- The exponent iteration sequence --------- *)
-
-Fixpoint alpha_seq (r : R) (k : nat) : R :=
-  match k with
-  | O => 1
-  | S k' => r * (alpha_seq r k')^2 + 1
-  end.
-
-Lemma alpha_seq_ge_1 : forall r k, r > 0 -> alpha_seq r k >= 1.
-Proof.
-  intros r k Hr. induction k as [|k' IH].
-  - simpl. lra.
-  - simpl. assert ((alpha_seq r k')^2 >= 0) by (apply Rle_ge; apply pow2_ge_0). nra.
-Qed.
-
-Lemma alpha_seq_increasing : forall r k,
-  r > 1/4 -> alpha_seq r (S k) > alpha_seq r k.
-Proof.
-  intros r k Hr. simpl.
-  assert (H := quadratic_positive r (alpha_seq r k) Hr). lra.
-Qed.
-
-Lemma alpha_seq_linear_lower : forall r k,
-  r > 1/4 -> alpha_seq r k >= 1 + INR k * (1 - 1/(4*r)).
-Proof.
-  intros r k Hr. induction k as [|k' IH].
-  - simpl. lra.
-  - simpl alpha_seq. rewrite S_INR.
-    assert (Hql := quadratic_lower_bound r (alpha_seq r k') Hr).
-    assert (Heq : r * (alpha_seq r k')^2 + 1 =
-                  alpha_seq r k' + (r * (alpha_seq r k')^2 - alpha_seq r k' + 1)) by ring.
-    lra.
-Qed.
-
-Lemma archimedean_nat : forall x : R, exists n : nat, INR n > x.
-Proof.
-  intros x. destruct (archimed x) as [H1 H2].
-  exists (Z.to_nat (up x)).
-  destruct (Z.le_gt_cases 0 (up x)).
-  - rewrite INR_IZR_INZ. rewrite Z2Nat.id; [|lia]. lra.
-  - assert (x < 0) by (assert (IZR (up x) <= 0) by (apply IZR_le; lia); lra).
-    assert (H3 := pos_INR (Z.to_nat (up x))). lra.
-Qed.
-
-Lemma alpha_seq_diverges : forall r M,
-  r > 1/4 -> exists k, alpha_seq r k > M.
-Proof.
-  intros r M Hr.
-  assert (Hdelta : 1 - 1/(4*r) > 0) by (assert (H := inv_4r_lt_1 r Hr); lra).
-  destruct (archimedean_nat ((M - 1) / (1 - 1/(4*r)))) as [k Hk].
-  exists k.
-  assert (Hlb := alpha_seq_linear_lower r k Hr).
-  assert (Hmul : INR k * (1 - 1/(4*r)) > M - 1).
-  { apply Rmult_lt_reg_r with (/ (1 - 1/(4*r))).
-    - apply Rinv_0_lt_compat. lra.
-    - rewrite Rmult_assoc. rewrite Rinv_r; [|lra]. rewrite Rmult_1_r.
-      unfold Rdiv in Hk. lra. }
-  lra.
-Qed.
-
-(* --------- Properties of g --------- *)
-
-Lemma g_increasing : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 0 ->
-  forall n, (n >= 1)%nat -> (g (S n) > g n)%nat.
-Proof.
-  intros g r Hpos Hineq Hr n Hn.
-  assert (H := Hineq n Hn).
-  assert (Hgn : (g n > 0)%nat) by (apply Hpos; lia).
-  assert (Hggn : (g (g n) > 0)%nat) by (apply Hpos; lia).
-  assert (Hrp : Rpower (INR (g (g n))) r > 0) by apply exp_pos.
-  assert (Hlt : INR (g n) < INR (g (S n))) by lra.
-  apply INR_lt in Hlt. lia.
-Qed.
-
-Lemma g_ge_n : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 0 ->
-  forall n, (n >= 1)%nat -> (g n >= n)%nat.
-Proof.
-  intros g r Hpos Hineq Hr.
-  induction n as [|n' IH]; [lia|].
-  intros Hn. destruct (Nat.eq_dec n' 0).
-  + subst. apply Hpos. lia.
-  + assert (Hn' : (n' >= 1)%nat) by lia.
-    assert (IH' := IH Hn').
-    assert (g (S n') > g n')%nat by (apply g_increasing with r; auto).
-    lia.
-Qed.
-
-Lemma g_monotone : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 0 ->
-  forall m n, (n >= 1)%nat -> (m >= n)%nat -> (g m >= g n)%nat.
-Proof.
-  intros g r Hpos Hineq Hr m n Hn Hmn.
-  induction Hmn as [|m' Hmn IH].
-  - lia.
-  - assert (g (S m') > g m')%nat by (apply g_increasing with r; auto; lia).
-    lia.
-Qed.
-
-(* --------- g(n) >= n+1 for n >= 3 --------- *)
-
-Lemma g_ge_Sn : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 1/4 ->
-  forall n, (n >= 3)%nat -> (g n >= S n)%nat.
-Proof.
-  intros g r Hpos Hineq Hr.
-  assert (Hr0 : r > 0) by lra.
-  assert (Hinc : forall n, (n >= 1)%nat -> (g (S n) > g n)%nat)
-    by (intros; apply g_increasing with r; auto).
-  assert (Hge : forall n, (n >= 1)%nat -> (g n >= n)%nat)
-    by (intros; apply g_ge_n with r; auto).
-  assert (Hg1 : (g 1 >= 1)%nat) by (apply Hge; lia).
-  assert (Hg2 : (g 2 >= 2)%nat) by (apply Hge; lia).
-  assert (Hg3_step : INR (g 3%nat) - INR (g 2%nat) >= Rpower (INR (g (g 2%nat))) r).
-  { apply Hineq. lia. }
-  assert (Hgg2 : (g (g 2%nat) >= 2)%nat).
-  { assert (g (g 2%nat) >= g 2%nat)%nat by (apply g_monotone with r; auto; lia). lia. }
-  assert (Hrp2 : Rpower (INR (g (g 2%nat))) r >= Rpower (INR 2) r).
-  { apply Rle_ge. apply Rle_Rpower_l; [lra|].
-    split; [simpl; lra|]. apply le_INR. lia. }
-  assert (Hrp2_gt1 : Rpower (INR 2) r > 1).
-  { rewrite <- (Rpower_O (INR 2) ltac:(simpl; lra)).
-    apply Rpower_lt; [simpl; lra | lra]. }
-  assert (Hdiff3 : INR (g 3%nat) - INR (g 2%nat) > 1) by lra.
-  assert (Hg3_nat : (g 3%nat > g 2%nat + 1)%nat).
-  { assert (INR (g 3%nat) > INR (g 2%nat) + 1) by lra.
-    assert (INR (g 3%nat) > INR (g 2%nat + 1)).
-    { rewrite plus_INR. simpl. lra. }
-    apply INR_lt in H0. lia. }
-  assert (Hg3 : (g 3%nat >= 4)%nat) by lia.
-  intros n Hn.
-  induction n as [|n' IH_n].
-  - lia.
-  - destruct (Nat.eq_dec n' 2).
-    + subst. simpl. lia.
-    + assert (Hn' : (n' >= 3)%nat) by lia.
-      assert (IH' := IH_n Hn').
-      assert (g (S n') > g n')%nat by (apply Hinc; lia).
-      lia.
-Qed.
-
-(* g(g(n)) >= g(S n) for n >= 3 *)
-Lemma gg_ge_gSn : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 1/4 ->
-  forall n, (n >= 3)%nat -> (g (g n) >= g (S n))%nat.
-Proof.
-  intros g r Hpos Hineq Hr n Hn.
-  assert (Hr0 : r > 0) by lra.
-  assert (Hge_Sn := g_ge_Sn g r Hpos Hineq Hr n Hn).
-  apply g_monotone with r; auto; lia.
-Qed.
-
-(* Key: g(S n) - g(n) >= Rpower(g(S n), r) for n >= 3 *)
-Lemma diff_ge_gSn_r : forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 1/4 ->
-  forall n, (n >= 3)%nat ->
-    INR (g (S n)) - INR (g n) >= Rpower (INR (g (S n))) r.
-Proof.
-  intros g r Hpos Hineq Hr n Hn.
-  assert (Hr0 : r > 0) by lra.
-  assert (Hrec := Hineq n ltac:(lia)).
-  assert (Hgg := gg_ge_gSn g r Hpos Hineq Hr n Hn).
-  assert (HgSn_pos : (g (S n) > 0)%nat) by (apply Hpos; lia).
-  assert (Hgn_pos : (g n > 0)%nat) by (apply Hpos; lia).
-  assert (Hggn_pos : (g (g n) > 0)%nat) by (apply Hpos; lia).
-  assert (Hmono : Rpower (INR (g (S n))) r <= Rpower (INR (g (g n))) r).
-  { apply Rle_Rpower_l; [lra|].
-    split; [apply lt_0_INR; lia | apply le_INR; lia]. }
-  lra.
-Qed.
-
-(* --------- Convexity / Concavity helpers --------- *)
-
-Lemma exp_convex : forall a b t,
-  0 <= t <= 1 ->
-  exp (t * a + (1 - t) * b) <= t * exp a + (1 - t) * exp b.
-Proof.
-  intros a b t [Ht0 Ht1].
-  set (c := t * a + (1 - t) * b).
-  assert (Ha : exp a = exp c * exp (a - c))
-    by (rewrite <- exp_plus; f_equal; unfold c; ring).
-  assert (Hb : exp b = exp c * exp (b - c))
-    by (rewrite <- exp_plus; f_equal; unfold c; ring).
-  rewrite Ha, Hb.
-  replace (t * (exp c * exp (a - c)) + (1 - t) * (exp c * exp (b - c)))
-    with (exp c * (t * exp (a - c) + (1 - t) * exp (b - c))) by ring.
-  assert (Hge1 : t * exp (a - c) + (1 - t) * exp (b - c) >= 1).
-  { assert (H1 : exp (a - c) >= 1 + (a - c))
-      by (destruct (Req_dec (a-c) 0) as [->|Hne]; [rewrite exp_0; lra | left; apply exp_ineq1; exact Hne]).
-    assert (H2 : exp (b - c) >= 1 + (b - c))
-      by (destruct (Req_dec (b-c) 0) as [->|Hne]; [rewrite exp_0; lra | left; apply exp_ineq1; exact Hne]).
-    assert (t * (a - c) + (1 - t) * (b - c) = 0) by (unfold c; ring). nra. }
-  assert (exp c > 0) by apply exp_pos. nra.
-Qed.
-
-Lemma weighted_AM_GM : forall x p,
-  0 < x -> 0 < p -> p < 1 ->
-  Rpower x p <= (1 - p) + p * x.
-Proof.
-  intros x p Hx Hp0 Hp1. unfold Rpower.
-  replace (p * ln x) with (p * ln x + (1 - p) * 0) by ring.
-  assert (Hconv := exp_convex (ln x) 0 p (conj (Rlt_le _ _ Hp0) (Rlt_le _ _ Hp1))).
-  rewrite exp_0 in Hconv. rewrite exp_ln in Hconv; [lra | exact Hx].
-Qed.
-
-Lemma rpower_concavity : forall a b s,
-  0 < a -> a <= b -> 0 < s -> s < 1 ->
-  Rpower b s - Rpower a s >= s * Rpower b (s - 1) * (b - a).
-Proof.
-  intros a b s Ha Hab Hs0 Hs1.
-  destruct (Req_dec a b) as [<-|Hne].
-  { replace (a - a) with 0 by ring. rewrite Rmult_0_r. lra. }
-  assert (Hab_strict : a < b) by lra.
-  assert (Hb : 0 < b) by lra.
-  set (t := a / b).
-  assert (Ht_pos : 0 < t) by (unfold t; apply Rdiv_lt_0_compat; lra).
-  assert (Ht_lt1 : t < 1).
-  { unfold t, Rdiv. rewrite <- (Rinv_r b ltac:(lra)).
-    apply Rmult_lt_compat_r; [apply Rinv_0_lt_compat|]; lra. }
-  assert (Hwam := weighted_AM_GM t s Ht_pos Hs0 Hs1).
-  assert (Hrpb_pos : Rpower b s > 0) by apply exp_pos.
-  assert (Hrpb_ne0 : Rpower b s <> 0) by lra.
-  assert (Hrp_div : Rpower t s = Rpower a s / Rpower b s).
-  { unfold t, Rdiv, Rpower.
-    rewrite ln_mult; [|lra|apply Rinv_0_lt_compat; lra].
-    rewrite ln_Rinv; [|lra].
-    rewrite Rmult_plus_distr_l. rewrite exp_plus.
-    f_equal. rewrite <- exp_Ropp. f_equal. ring. }
-  assert (Hdiv_le : Rpower a s / Rpower b s <= (1 - s) + s * t)
-    by (rewrite <- Hrp_div; exact Hwam).
-  assert (Hrpbs : Rpower b s = b * Rpower b (s - 1)).
-  { unfold Rpower. rewrite <- (exp_ln b Hb) at 2.
-    rewrite <- exp_plus. f_equal. ring. }
-  assert (Hab_div : t * b = a).
-  { unfold t. field. lra. }
-  assert (Hrpbs1_pos : Rpower b (s - 1) > 0) by apply exp_pos.
-  assert (Hexpand : ((1 - s) + s * t) * Rpower b s =
-                    (1 - s) * Rpower b s + s * a * Rpower b (s - 1)).
-  { rewrite Hrpbs at 2.
-    replace (((1 - s) + s * t) * Rpower b s)
-      with ((1 - s) * Rpower b s + s * t * Rpower b s) by ring.
-    rewrite Hrpbs.
-    replace (s * t * (b * Rpower b (s - 1)))
-      with (s * (t * b) * Rpower b (s - 1)) by ring.
-    rewrite Hab_div. ring. }
-  assert (H1 : Rpower a s <= ((1 - s) + s * t) * Rpower b s).
-  { assert (HH := Rmult_le_compat_r (Rpower b s) _ _ (Rlt_le _ _ Hrpb_pos) Hdiv_le).
-    unfold Rdiv in HH. rewrite Rmult_assoc in HH.
-    rewrite (Rinv_l (Rpower b s) Hrpb_ne0) in HH. lra. }
-  rewrite Hexpand in H1. rewrite Hrpbs. nra.
-Qed.
-
-Lemma rpower_step : forall a b s,
-  0 < a -> a <= b -> 0 < s -> s < 1 ->
-  b - a >= Rpower b s ->
-  Rpower b (1 - s) - Rpower a (1 - s) >= 1 - s.
-Proof.
-  intros a b s Ha Hab Hs0 Hs1 Hdiff.
-  assert (H1r_pos : 0 < 1 - s) by lra.
-  assert (H1r_lt1 : 1 - s < 1) by lra.
-  assert (Hconc := rpower_concavity a b (1 - s) Ha Hab H1r_pos H1r_lt1).
-  replace (1 - s - 1) with (-s) in Hconc by ring.
-  assert (Hrp_neg : Rpower b (- s) = / Rpower b s).
-  { unfold Rpower. rewrite <- exp_Ropp. f_equal. ring. }
-  rewrite Hrp_neg in Hconc.
-  assert (Hrpbs_pos : Rpower b s > 0) by apply exp_pos.
-  assert (Hrpbs_ne0 : Rpower b s <> 0) by lra.
-  assert (Hinv_pos : / Rpower b s > 0) by (apply Rinv_0_lt_compat; lra).
-  assert (Hdiff_le : Rpower b s <= b - a) by lra.
-  assert (H2 : / Rpower b s * (b - a) >= 1).
-  { assert (Hmul : / Rpower b s * (b - a) >= / Rpower b s * Rpower b s).
-    { apply Rmult_ge_compat_l; [lra | lra]. }
-    rewrite (Rinv_l (Rpower b s) Hrpbs_ne0) in Hmul. exact Hmul. }
-  nra.
-Qed.
-
-(* --------- Telescoping --------- *)
-
-Lemma rpower_telescope :
-  forall (f : nat -> R) (c : R) (N : nat),
-  (forall n, (n >= N)%nat -> f (S n) - f n >= c) ->
-  forall n, (n >= N)%nat -> f n >= f N + INR (n - N) * c.
-Proof.
-  intros f c N Hstep n Hn.
-  induction n as [|n' IH].
-  - assert (N = 0%nat) by lia. subst. simpl. lra.
-  - destruct (Nat.eq_dec (S n') N) as [->|Hne].
-    + replace (N - N)%nat with 0%nat by lia. simpl. lra.
-    + assert (Hn' : (n' >= N)%nat) by lia.
-      specialize (IH Hn').
-      assert (Hstep' := Hstep n' Hn').
-      replace (S n' - N)%nat with (S (n' - N))%nat by lia.
-      rewrite S_INR. lra.
-Qed.
-
-(* --------- Concavity upper bound --------- *)
-
-Lemma rpower_concavity_upper : forall a b s,
-  0 < a -> a <= b -> 0 < s -> s < 1 ->
-  Rpower b s <= Rpower a s + s * Rpower a (s - 1) * (b - a).
-Proof.
-  intros a b s Ha Hab Hs0 Hs1.
-  destruct (Req_dec a b) as [<-|Hne].
-  { replace (a - a) with 0 by ring. rewrite Rmult_0_r. lra. }
-  assert (Hab_strict : a < b) by lra.
-  assert (Hb : 0 < b) by lra.
-  set (t := b / a).
-  assert (Ht_pos : 0 < t) by (unfold t; apply Rdiv_lt_0_compat; lra).
-  assert (Hwam := weighted_AM_GM t s Ht_pos Hs0 Hs1).
-  assert (Hrpa_pos : Rpower a s > 0) by apply exp_pos.
-  assert (Hba_eq : b / a * a = b) by (field; lra).
-  assert (Hrp_prod : Rpower b s = Rpower t s * Rpower a s).
-  { unfold t. rewrite <- Hba_eq at 1.
-    symmetry. apply Rpower_mult_distr.
-    - apply Rdiv_lt_0_compat; lra.
-    - exact Ha. }
-  assert (H1 : Rpower b s <= ((1 - s) + s * t) * Rpower a s).
-  { rewrite Hrp_prod. apply Rmult_le_compat_r; lra. }
-  assert (Hsimp : ((1 - s) + s * t) * Rpower a s = Rpower a s + s * (t - 1) * Rpower a s).
-  { ring. }
-  rewrite Hsimp in H1.
-  assert (Hrpas_split : Rpower a s = a * Rpower a (s - 1)).
-  { assert (Htemp : Rpower a 1 * Rpower a (s - 1) = Rpower a (1 + (s - 1))).
-    { symmetry. apply Rpower_plus. }
-    replace (1 + (s - 1)) with s in Htemp by ring.
-    rewrite Rpower_1 in Htemp; [lra | exact Ha]. }
-  assert (Hrpas1_pos : Rpower a (s - 1) > 0) by apply exp_pos.
-  assert (Hkey : s * (t - 1) * Rpower a s = s * Rpower a (s - 1) * (b - a)).
-  { rewrite Hrpas_split.
-    unfold t. field_simplify; [|lra]. ring. }
-  lra.
-Qed.
-
-(* ================================================================ *)
-(* THE CONTRADICTION: r > 1/4 implies False                         *)
-(*                                                                  *)
-(* Strategy:                                                         *)
-(* 1. For r >= 1: direct contradiction (g(3) <= 0).                 *)
-(* 2. For 1/4 < r < 1: we use the concavity of x^{1-r} to show     *)
-(*    that Rpower(g(n), 1-r) grows at least linearly, then use      *)
-(*    the self-referential structure g(g(n)) to show that the       *)
-(*    recurrence cannot be satisfied, via the divergence of          *)
-(*    alpha_seq.                                                     *)
-(* ================================================================ *)
-
-Lemma growth_unbounded :
-  forall (g : nat -> nat) (r : R),
-  (forall n, (n > 0)%nat -> (g n > 0)%nat) ->
-  (forall n, (n >= 1)%nat ->
-     INR (g (S n)) - INR (g n) >= Rpower (INR (g (g n))) r) ->
-  r > 1/4 ->
-  False.
-Proof.
-  intros g r Hpos Hineq Hr.
-  assert (Hr0 : r > 0) by lra.
-  assert (Hr1 : 1 - r > 0 \/ 1 - r <= 0) by lra.
-
-  (* Derived properties *)
-  assert (Hinc : forall n, (n >= 1)%nat -> (g (S n) > g n)%nat)
-    by (intros; apply g_increasing with r; auto).
-  assert (Hge : forall n, (n >= 1)%nat -> (g n >= n)%nat)
-    by (intros; apply g_ge_n with r; auto).
-  assert (Hge_Sn : forall n, (n >= 3)%nat -> (g n >= S n)%nat)
-    by (intros; apply g_ge_Sn with r; auto).
-  assert (Hgg_ge_gSn : forall n, (n >= 3)%nat -> (g (g n) >= g (S n))%nat)
-    by (intros; apply gg_ge_gSn with r; auto).
-  assert (Hdiff_gSn : forall n, (n >= 3)%nat ->
-    INR (g (S n)) - INR (g n) >= Rpower (INR (g (S n))) r)
-    by (intros; apply diff_ge_gSn_r with (g := g); auto).
-  assert (Hmono : forall m n, (n >= 1)%nat -> (m >= n)%nat -> (g m >= g n)%nat)
-    by (intros; apply g_monotone with r; auto).
-
-  (* Case r >= 1: immediate contradiction *)
-  destruct Hr1 as [Hr_lt1 | Hr_ge1].
-  2: {
-    specialize (Hdiff_gSn 3%nat ltac:(lia)).
-    assert (HgS3_pos : (g (S 3) > 0)%nat) by (apply Hpos; lia).
-    assert (Hg3_pos : (g 3%nat > 0)%nat) by (apply Hpos; lia).
-    assert (Hge_gS3 : Rpower (INR (g (S 3))) r >= INR (g (S 3))).
-    { assert (HgS3_ge4 : (g (S 3) >= 4)%nat).
-      { assert (g (S 3) > g 3%nat)%nat by (apply Hinc; lia).
-        assert (g 3%nat >= 4)%nat by (apply Hge_Sn; lia). lia. }
-      assert (0 < INR (g (S 3))) by (apply lt_0_INR; lia).
-      assert (INR (g (S 3)) > 1).
-      { assert (H4le : (4 <= g (S 3))%nat) by lia.
-        apply le_INR in H4le. simpl in H4le. lra. }
-      assert (Rpower (INR (g (S 3))) 1 <= Rpower (INR (g (S 3))) r).
-      { destruct (Req_dec r 1); [subst; lra|].
-        left. apply Rpower_lt; lra. }
-      rewrite Rpower_1 in H1; lra. }
-    assert (INR (g 3%nat) <= 0) by lra.
-    assert (0 < INR (g 3%nat)) by (apply lt_0_INR; lia).
-    lra.
-  }
-
-  (* ============================================================ *)
-  (* Case 1/4 < r < 1                                              *)
-  (* ============================================================ *)
-
-  (* Step 1: Rpower(g(S n), 1-r) - Rpower(g(n), 1-r) >= 1-r       *)
-  (*         for all n >= 3.                                        *)
-  assert (Hrp_step : forall n, (n >= 3)%nat ->
-    Rpower (INR (g (S n))) (1 - r) - Rpower (INR (g n)) (1 - r) >= 1 - r).
-  { intros n Hn.
-    assert (HgSn_pos : (g (S n) > 0)%nat) by (apply Hpos; lia).
-    assert (Hgn_pos : (g n > 0)%nat) by (apply Hpos; lia).
-    assert (HgSn_gt_gn : (g (S n) > g n)%nat) by (apply Hinc; lia).
-    assert (Ha : 0 < INR (g n)) by (apply lt_0_INR; lia).
-    assert (Hab : INR (g n) <= INR (g (S n))) by (apply le_INR; lia).
-    assert (Hdiff := Hdiff_gSn n Hn).
-    assert (Hr_lt1' : r < 1) by lra.
-    exact (rpower_step (INR (g n)) (INR (g (S n))) r Ha Hab Hr0 Hr_lt1' Hdiff).
-  }
-
-  (* Step 2: Telescope: Rpower(g(n), 1-r) >= Rpower(g(3), 1-r) + (n-3)*(1-r) *)
-  assert (Hrp_tel : forall n, (n >= 3)%nat ->
-    Rpower (INR (g n)) (1 - r) >= Rpower (INR (g 3%nat)) (1 - r) + INR (n - 3) * (1 - r)).
-  { apply rpower_telescope.
-    intros n0 Hn0. apply Hrp_step. lia. }
-
-  (* Step 3: g(3) >= 4, so Rpower(g(3), 1-r) > 0 *)
-  assert (Hg3_ge4 : (g 3%nat >= 4)%nat) by (apply Hge_Sn; lia).
-  assert (Hg3_pos : 0 < INR (g 3%nat)) by (apply lt_0_INR; lia).
-  assert (Hrp_g3_pos : Rpower (INR (g 3%nat)) (1 - r) > 0) by apply exp_pos.
-
-  (* Step 4: For the orbit, between orbit points the summing argument gives *)
-  (* d_{k+1} >= d_k * orbit(k+2)^r, which by the concavity step gives *)
-  (* d_{k+1}^{1-r} >= d_k. So d_k grows doubly-exponentially. *)
-  (* Combined with the constraint d_k < orbit(k+2)^{1-r}, this produces *)
-  (* a contradiction via the divergence of alpha_seq.                    *)
-
-  (* We use the following key lemma: for any n >= 3, between n and g(n), *)
-  (* there are g(n) - n steps, each contributing at least g(g(n))^r to *)
-  (* the total increase g(g(n)) - g(n). So: *)
-  (* g(g(n)) - g(n) >= (g(n) - n) * g(g(n))^r *)
-
-  (* This gives: g(g(n))*(1 - (g(n)-n)*g(g(n))^{r-1}) >= g(n) *)
-  (* i.e., (g(n)-n)*g(g(n))^{r-1} <= 1 - g(n)/g(g(n)) < 1 *)
-  (* i.e., (g(n)-n) < g(g(n))^{1-r} *)
-
-  (* The key bound: g(n) - n < g(g(n))^{1-r} for all n >= 3. *)
-
-  assert (Hkey : forall n, (n >= 3)%nat ->
-    INR (g (g n)) - INR (g n) >= INR (g n - n) * Rpower (INR (g (g n))) r).
-  { intros n Hn.
-    (* For m from n to g(n)-1 (all >= 3): g(m+1)-g(m) >= g(g(m))^r *)
-    (* For m >= n: g(m) >= g(n) >= n+1 >= 4. g(g(m)) >= g(g(n)). *)
-    (* So g(m+1)-g(m) >= g(g(n))^r. *)
-    (* Summing g(n)-n terms: g(g(n)) - g(n) >= (g(n)-n) * g(g(n))^r. *)
-
-    (* Actually, for m from n to g(n)-1, we have m >= n >= 3 *)
-    (* and g(m) >= g(n) (monotonicity), so g(g(m)) >= g(g(n)) (monotonicity). *)
-    (* The recurrence gives g(m+1) - g(m) >= g(g(m))^r >= g(g(n))^r. *)
-    (* Summing from m = n to m = g(n)-1 gives *)
-    (* g(g(n)) - g(n) >= (g(n) - n) * g(g(n))^r. *)
-
-    assert (Hgn_ge : (g n >= S n)%nat) by (apply Hge_Sn; lia).
-    assert (Hggn_pos : (g (g n) > 0)%nat) by (apply Hpos; lia).
-    assert (Hgn_pos2 : (g n > 0)%nat) by (apply Hpos; lia).
-    assert (Hrp_ggn_pos : Rpower (INR (g (g n))) r > 0) by apply exp_pos.
-    (* We prove by induction on (g(n) - n) that the sum bound holds *)
-    assert (Hsum : forall k, (k <= g n - n)%nat ->
-      INR (g ((n + k)%nat)) - INR (g n) >= INR k * Rpower (INR (g (g n))) r).
-    { induction k as [|k' IH_k].
-      - simpl. replace (n + 0)%nat with n by lia. lra.
-      - intros Hk.
-        assert (Hk' : (k' <= g n - n)%nat) by lia.
-        specialize (IH_k Hk').
-        assert (Hnk : (n + k' >= 3)%nat) by lia.
-        assert (Hm_rec : INR (g (S ((n + k')%nat))) - INR (g ((n + k')%nat)) >=
-                         Rpower (INR (g (g ((n + k')%nat)))) r).
-        { apply Hineq. lia. }
-        assert (Hgnk_ge : (g ((n + k')%nat) >= g n)%nat) by (apply Hmono; lia).
-        assert (Hggnk_ge : (g (g ((n + k')%nat)) >= g (g n))%nat).
-        { assert (Hgn_ge1 : (g n >= 1)%nat) by lia.
-          apply (Hmono (g ((n + k')%nat)) (g n) Hgn_ge1 Hgnk_ge). }
-        assert (Hrp_mono : Rpower (INR (g (g ((n + k')%nat)))) r >=
-                           Rpower (INR (g (g n))) r).
-        { apply Rle_ge. apply Rle_Rpower_l; [lra|].
-          split; [apply lt_0_INR; apply Hpos; lia | apply le_INR; lia]. }
-        replace ((n + S k')%nat) with (S ((n + k')%nat)) by lia.
-        rewrite S_INR. nra.
-    }
-    specialize (Hsum (g n - n)%nat ltac:(lia)).
-    replace ((n + (g n - n))%nat) with (g n) in Hsum by lia.
-    exact Hsum.
-  }
-
-  (* Step 5: From Hkey, we get (g(n) - n) * g(g(n))^r <= g(g(n)) - g(n) < g(g(n)) *)
-  (* So (g(n) - n) < g(g(n))^{1-r} *)
-  (* Using the telescope: g(g(n))^{1-r} >= g(3)^{1-r} + (g(n)-3)*(1-r) *)
-  (* So g(n) - n < g(3)^{1-r} + (g(n)-3)*(1-r) *)
-  (* For g(n) = M, n >= 3: M - n < C + (M-3)*(1-r) *)
-  (* i.e., M - n < C + M*(1-r) - 3*(1-r) *)
-  (* i.e., M*r < n + C - 3*(1-r) *)
-  (* i.e., M < (n + C - 3*(1-r))/r *)
-  (* This gives an UPPER bound on g(n)! *)
-
-  (* Specifically: g(n) - n < Rpower(g(g(n)), 1-r) *)
-  (* And from the telescope: Rpower(g(g(n)), 1-r) >= Rpower(g(3), 1-r) + (g(n)-3)*(1-r) *)
-  (* So g(n) - n < Rpower(g(3), 1-r) + (g(n)-3)*(1-r) *)
-  (* Let M = g(n), C = Rpower(g(3), 1-r). *)
-  (* M - n < C + (M-3)*(1-r) = C + M - M*r - 3 + 3*r *)
-  (* M - n < C + M - M*r - 3 + 3*r *)
-  (* -n < C - M*r - 3 + 3*r *)
-  (* M*r < n + C - 3 + 3*r *)
-  (* M < (n + C - 3 + 3*r)/r *)
-
-  (* This gives g(n) < (n + C)/r for large n. So g(n) < n/r + C'. *)
-  (* Since r < 1, 1/r > 1, so g(n) < n/r + C' ~ n/r. *)
-  (* This means g(n)/n < 1/r + C'/n, so g(n)/n is bounded! *)
-
-  (* But g(n) >= n (we proved this). So n <= g(n) < n/r + C'. *)
-  (* g is sandwiched between n and n/r + C'. *)
-
-  (* Now, g(g(n)): g(n) < n/r + C', so *)
-  (* g(g(n)) < g(n)/r + C' < (n/r + C')/r + C' = n/r^2 + C'/r + C' *)
-
-  (* From the recurrence: g(n+1) - g(n) >= g(g(n))^r >= n^r (since g(g(n)) >= g(n+1) >= n+2) *)
-  (* Actually, g(g(n)) >= g(n+1) >= n + 2 >= 5 for n >= 3. *)
-  (* And g(g(n)) < n/r^2 + C''. *)
-
-  (* The upper bound on g(n): g(n) < n/r + C'. *)
-  (* Apply to g(g(n)) with the orbit. At orbit point a_k: *)
-  (* a_{k+1} = g(a_k) < a_k/r + C' *)
-  (* a_{k+2} = g(a_{k+1}) < a_{k+1}/r + C' < a_k/r^2 + C'/r + C' *)
-
-  (* And the lower bound from Hkey: *)
-  (* (a_k - k - 3) * a_{k+2}^r <= a_{k+2} - a_{k+1} *)
-  (* Wait, not directly. Let me use the upper bound differently. *)
-
-  (* The upper bound g(n) < n/r + C gives: *)
-  (* g(n) * r < n + C*r, so g(n) * r - n < C*r. *)
-  (* This means g(n) * r - n is bounded! *)
-
-  (* Now define h(n) = g(n) * r - n for n >= 3. *)
-  (* h(n) = g(n)*r - n < C*r (bounded above by a constant). *)
-  (* h(n+1) = g(n+1)*r - (n+1) = (g(n) + (g(n+1)-g(n)))*r - n - 1 *)
-  (*        = g(n)*r + (g(n+1)-g(n))*r - n - 1 *)
-  (*        = h(n) + (g(n+1)-g(n))*r - 1 *)
-
-  (* From the recurrence: g(n+1)-g(n) >= g(n+1)^r >= (n+2)^r. *)
-  (* So h(n+1) >= h(n) + (n+2)^r * r - 1. *)
-
-  (* For large n, (n+2)^r * r > 1 (since (n+2)^r -> infinity). *)
-  (* So h(n+1) > h(n) for large n. *)
-  (* This means h(n) is eventually increasing, but also bounded above. *)
-  (* Contradiction! *)
-
-  (* Let's formalize this. *)
-
-  (* First, establish the upper bound on g(n). *)
-  assert (Hbound : forall n, (n >= 3)%nat ->
-    INR (g n) - INR n < Rpower (INR (g (g n))) (1 - r)).
-  { intros n Hn.
-    assert (Hk := Hkey n Hn).
-    assert (Hgn_ge_Sn : (g n >= S n)%nat) by (apply Hge_Sn; lia).
-    assert (Hggn_pos : (g (g n) > 0)%nat) by (apply Hpos; lia).
-    assert (Hrp_r_pos : Rpower (INR (g (g n))) r > 0) by apply exp_pos.
-    assert (Hgn_sub : INR (g n - n) = INR (g n) - INR n).
-    { rewrite minus_INR; [ring|lia]. }
-    rewrite Hgn_sub in Hk.
-    assert (Hggn_ge_gn : (g (g n) >= g n)%nat).
-    { exact (Hmono (g n) n ltac:(lia) (Hge n ltac:(lia))). }
-    assert (Hggn_val : INR (g (g n)) > 0) by (apply lt_0_INR; lia).
-    assert (Hgn_pos : INR (g n) > 0) by (apply lt_0_INR; lia).
-    (* (g(n)-n) * g(g(n))^r <= g(g(n)) - g(n) < g(g(n)) *)
-    assert (Hlt2 : (INR (g n) - INR n) * Rpower (INR (g (g n))) r < INR (g (g n))).
-    { assert (INR (g n) <= INR (g (g n))) by (apply le_INR; lia). lra. }
-    (* g(g(n)) = g(g(n))^r * g(g(n))^{1-r} *)
-    assert (Hggn_split : INR (g (g n)) = Rpower (INR (g (g n))) r * Rpower (INR (g (g n))) (1 - r)).
-    { unfold Rpower. rewrite <- exp_plus.
-      replace (r * ln (INR (g (g n))) + (1 - r) * ln (INR (g (g n))))
-        with (ln (INR (g (g n)))) by ring.
-      rewrite exp_ln; [reflexivity | exact Hggn_val]. }
-    assert (Hrp_1mr_pos : Rpower (INR (g (g n))) (1 - r) > 0) by apply exp_pos.
-    (* Divide Hlt2 by Rpower(g(g(n)), r) to get the bound *)
-    assert (Hdiv : INR (g n) - INR n < INR (g (g n)) * / Rpower (INR (g (g n))) r).
-    { apply (Rmult_lt_reg_r (Rpower (INR (g (g n))) r) _ _ Hrp_r_pos).
-      rewrite Rmult_assoc. rewrite Rinv_l; [| lra]. rewrite Rmult_1_r.
-      lra. }
-    (* INR(g(g(n))) * / Rpower(g(g(n)), r) = Rpower(g(g(n)), 1-r) *)
-    assert (Hsimp : INR (g (g n)) * / Rpower (INR (g (g n))) r = Rpower (INR (g (g n))) (1 - r)).
-    { assert (Hrp_ne0 : Rpower (INR (g (g n))) r <> 0) by lra.
-      rewrite Hggn_split at 1.
-      (* Goal: Rpower _ r * Rpower _ (1-r) * / Rpower _ r = Rpower _ (1-r) *)
-      rewrite Rmult_comm with (r1 := Rpower (INR (g (g n))) r).
-      rewrite Rmult_assoc.
-      rewrite Rinv_r; [| exact Hrp_ne0].
-      rewrite Rmult_1_r. reflexivity. }
-    lra.
-  }
-
-  (* Step 6: Orbit-based contradiction *)
-  (* Define the orbit: a_0 = n0, a_{k+1} = g(a_k). *)
-  (* d_k = a_{k+1} - a_k, e_k = d_k / a_{k+1}. *)
-  (* Key facts: *)
-  (*   - From Hkey: d_{k+1} >= d_k * a_{k+2}^r >= d_k * a_{k+1}^r *)
-  (*   - 0 < e_k < 1 (since a_k > 0) *)
-  (*   - Case A (d_{k+1} < a_{k+1}): e_{k+1} >= 2*e_k *)
-  (*   - Case B (d_{k+1} >= a_{k+1}): e_{k+1} >= 1/2 *)
-  (*   - Once e >= 1/2: Case A gives a^r < 2 (contradiction) *)
-  (*     and Case B + Hbound gives a^r < 2^{2-r} < 4 (contradiction) *)
-
-  (* Choose n0 >= 3 with n0^r >= 4. *)
-  assert (Hexists_n0 : exists n0, (n0 >= 3)%nat /\ Rpower (INR n0) r >= 4).
-  { destruct (archimedean_nat (Rpower 5 (/ r))) as [m Hm].
-    exists (Nat.max m 3)%nat. split; [lia|].
-    assert (Hm3_pos : 0 < INR (Nat.max m 3)) by (apply lt_0_INR; lia).
-    assert (H5pos : (0 < 5)) by lra.
-    assert (Hrp_inv : Rpower (Rpower 5 (/ r)) r = 5).
-    { unfold Rpower.
-      rewrite ln_exp.
-      replace (r * (/ r * ln 5)) with (ln 5) by (field; lra).
-      apply exp_ln. lra. }
-    assert (Hge_rp : INR (Nat.max m 3) >= Rpower 5 (/r)).
-    { assert (Rpower 5 (/r) > 0) by apply exp_pos.
-      assert (INR (Nat.max m 3) >= INR m) by (apply Rle_ge; apply le_INR; lia).
-      lra. }
-    assert (Hmono_rp : Rpower (INR (Nat.max m 3)) r >= Rpower (Rpower 5 (/r)) r).
-    { apply Rle_ge. apply Rle_Rpower_l; [lra|]. split; [apply exp_pos | lra]. }
-    rewrite Hrp_inv in Hmono_rp. lra.
-  }
-  destruct Hexists_n0 as [n0 [Hn0_ge3 Hn0_rp4]].
-
-  (* Define the orbit iteration. *)
-  set (a := fix a (k : nat) : nat :=
-    match k with O => n0 | S k' => g (a k') end).
-  set (d := fun k => (a (S k) - a k)%nat).
-
-  (* Basic orbit properties *)
-  assert (Ha_ge3 : forall k, (a k >= 3)%nat).
-  { induction k as [|k' IH].
-    - simpl. lia.
-    - simpl. assert ((g (a k') >= S (a k'))%nat) by (apply Hge_Sn; lia). lia. }
-
-  assert (Ha_ge_n0 : forall k, (a k >= n0)%nat).
-  { induction k as [|k' IH].
-    - simpl. lia.
-    - simpl. assert ((g (a k') >= S (a k'))%nat) by (apply Hge_Sn; lia). lia. }
-
-  assert (Ha_pos : forall k, (a k > 0)%nat).
-  { intros k. assert (Hk := Ha_ge3 k). lia. }
-
-  assert (Ha_inc : forall k, (a (S k) > a k)%nat).
-  { intros k. simpl. assert (Hk := Ha_ge3 k).
-    assert (g (a k) >= S (a k))%nat by (apply Hge_Sn; lia). lia. }
-
-  assert (Hd_pos : forall k, (d k >= 1)%nat).
-  { intros k. unfold d. assert (Hk := Ha_inc k). lia. }
-
-  assert (Ha_Srp : forall k, Rpower (INR (a k)) r >= 4).
-  { intros k.
-    assert (Ha_k := Ha_ge_n0 k).
-    assert (Ha_pos_k : 0 < INR (a k)) by (apply lt_0_INR; lia).
-    assert (Hn0_pos : 0 < INR n0) by (apply lt_0_INR; lia).
-    assert (INR (a k) >= INR n0) by (apply Rle_ge; apply le_INR; lia).
-    assert (Rpower (INR (a k)) r >= Rpower (INR n0) r).
-    { apply Rle_ge. apply Rle_Rpower_l; [lra|]. split; [lra|lra]. }
-    lra. }
-
-  (* Hkey on orbit: d_{k+1} >= d_k * a_{k+2}^r *)
-  assert (Hkey_orbit : forall k,
-    INR (d (S k)) >= INR (d k) * Rpower (INR (a (S (S k)))) r).
-  { intros k.
-    assert (Hk3 := Ha_ge3 k).
-    assert (HkS := Hkey (a k) Hk3).
-    (* Hkey gives: g(g(a k)) - g(a k) >= (g(a k) - a k) * g(g(a k))^r *)
-    (* i.e., a(S(S k)) - a(S k) >= (a(S k) - a k) * a(S(S k))^r *)
-    change (g (a k)) with (a (S k)) in HkS.
-    change (g (a (S k))) with (a (S (S k))) in HkS.
-    assert (Hgn_sub : INR (a (S k) - a k) = INR (a (S k)) - INR (a k)).
-    { rewrite minus_INR; [ring | assert (Hh := Ha_inc k); lia]. }
-    rewrite Hgn_sub in HkS.
-    unfold d.
-    assert (Hd_sub : INR (a (S (S k)) - a (S k)) = INR (a (S (S k))) - INR (a (S k))).
-    { rewrite minus_INR; [ring | assert (Hh := Ha_inc (S k)); lia]. }
-    assert (Hdk_sub : INR (a (S k) - a k) = INR (a (S k)) - INR (a k)).
-    { rewrite minus_INR; [ring | assert (Hh := Ha_inc k); lia]. }
-    rewrite Hd_sub, Hdk_sub. exact HkS. }
-
-  (* Lower bound: d_{k+1} >= d_k * a_{k+1}^r (since a_{k+2} >= a_{k+1}) *)
-  assert (Hd_growth : forall k,
-    INR (d (S k)) >= INR (d k) * Rpower (INR (a (S k))) r).
-  { intros k.
-    assert (Hko := Hkey_orbit k).
-    assert (Ha_mono : Rpower (INR (a (S (S k)))) r >= Rpower (INR (a (S k))) r).
-    { apply Rle_ge. apply Rle_Rpower_l; [lra|].
-      split; [apply lt_0_INR; apply Ha_pos |
-              apply le_INR; assert (Hh := Ha_inc (S k)); lia]. }
-    assert (Hdk_pos : INR (d k) >= 0).
-    { apply Rle_ge. apply pos_INR. }
-    nra. }
-
-  (* d_{k+1} >= 4 * d_k *)
-  assert (Hd_x4 : forall k, INR (d (S k)) >= 4 * INR (d k)).
-  { intros k.
-    assert (Hg := Hd_growth k).
-    assert (Ha_rp := Ha_Srp (S k)).
-    assert (Hdk_pos : INR (d k) >= 0) by (apply Rle_ge; apply pos_INR).
-    nra. }
-
-  (* d_k >= 4^k (by induction) *)
-  assert (Hd_exp : forall k, INR (d k) >= Rpower 4 (INR k)).
-  { induction k as [|k' IH].
-    - simpl. unfold Rpower. rewrite Rmult_0_l. rewrite exp_0.
-      assert (Hh := Hd_pos 0%nat).
-      assert (INR (d 0%nat) >= INR 1) by (apply Rle_ge; apply le_INR; lia).
-      simpl in H. lra.
-    - assert (Hx4 := Hd_x4 k').
-      rewrite S_INR.
-      assert (Hrp_split : Rpower 4 (INR k' + 1) = 4 * Rpower 4 (INR k')).
-      { unfold Rpower. rewrite Rmult_plus_distr_r. rewrite exp_plus.
-        rewrite Rmult_comm. f_equal.
-        rewrite Rmult_1_l. rewrite exp_ln; [reflexivity|lra]. }
-      rewrite Hrp_split. nra. }
-
-  (* Hbound on orbit: d_k < a_{k+2}^{1-r} *)
-  assert (Hbound_orbit : forall k,
-    INR (d k) < Rpower (INR (a (S (S k)))) (1 - r)).
-  { intros k.
-    assert (Hk3 := Ha_ge3 k).
-    assert (Hb := Hbound (a k) Hk3).
-    change (g (a k)) with (a (S k)) in Hb.
-    change (g (a (S k))) with (a (S (S k))) in Hb.
-    assert (Hdk_sub : INR (a (S k)) - INR (a k) = INR (d k)).
-    { unfold d. rewrite minus_INR; [ring | assert (Hh := Ha_inc k); lia]. }
-    lra. }
-
-  (* ============================================================== *)
-  (* Step 6: Concavity upper bound + geometric series contradiction *)
-  (*                                                                 *)
-  (* Concavity of x^{1-r}: a_{k+2}^{1-r} <= n0^{1-r} +            *)
-  (*   (1-r)/n0^r * (a_{k+2} - n0).                                *)
-  (* Combined with Hbound (d_k < a_{k+2}^{1-r}) and                *)
-  (*   Hsum_bound (a_{k+1}-n0 <= 4/3*d_k) and d_{k+1} >= 4*d_k:   *)
-  (* d_k*(2+r)/3 < n0^{1-r} + (1-r)/4*d_{k+1}                     *)
-  (* d_k*(4r-1)/3 < n0^{1-r}.                                       *)
-  (* But d_k >= 4^k -> infinity. Contradiction.                     *)
-  (* ============================================================== *)
-
-  (* Step 6a: Sum bound: a(S k) - n0 <= 4/3 * d_k *)
-  assert (Hsum_bound : forall k, INR (a (S k)) - INR n0 <= 4/3 * INR (d k)).
-  { induction k as [|k' IH].
-    - (* a(1) - n0 = d(0) <= 4/3 * d(0) *)
-      assert (Hh := Ha_inc 0%nat).
-      unfold d. simpl. simpl in Hh.
-      assert (Hle : (n0 <= g n0)%nat) by lia.
-      rewrite minus_INR; [| exact Hle].
-      assert (Hd0_pos : 0 < INR (g n0) - INR n0).
-      { assert (INR n0 < INR (g n0)) by (apply lt_INR; lia). lra. }
-      lra.
-    - assert (Hx4 := Hd_x4 k').
-      assert (Hh := Ha_inc (S k')).
-      assert (Hle : (a (S k') <= a (S (S k')))%nat) by lia.
-      assert (Hd_sub : INR (a (S (S k'))) - INR n0 =
-              (INR (a (S k')) - INR n0) + INR (d (S k'))).
-      { unfold d.
-        rewrite minus_INR; [lra | exact Hle]. }
-      rewrite Hd_sub.
-      assert (Hdk'_le : INR (d k') <= INR (d (S k')) / 4) by lra.
-      lra. }
-
-  (* Step 6b: Concavity upper bound on d_k *)
-  assert (Hn0_pos : 0 < INR n0) by (apply lt_0_INR; lia).
-  assert (Hn0_rp_inv : Rpower (INR n0) (- r) <= / 4).
-  { assert (Hrp_neg : Rpower (INR n0) (- r) = / Rpower (INR n0) r).
-    { rewrite Rpower_Ropp. reflexivity. }
-    rewrite Hrp_neg.
-    apply Rinv_le_contravar; lra. }
-
-  (* ============================================================ *)
-  (* Step 6b: Direct Rpower contradiction.                        *)
-  (*   For large k: a_{k+2} <= 2*d_{k+1}, so                    *)
-  (*   d_k < a_{k+2}^{1-r} <= (2*d_{k+1})^{1-r} <= 2*d_{k+1}^{1-r} *)
-  (*   Since d_{k+1} >= 4*d_k:                                    *)
-  (*   d_k < 2*(4*d_k)^{1-r} <= 8*d_k^{1-r}                     *)
-  (*   So d_k^r < 8, bounding d_k.                                *)
-  (*   But d_k >= 4^k -> infinity. Contradiction.                 *)
-  (* ============================================================ *)
-
-  (* First, for large k, a_{k+2} <= 2 * d_{k+1}. *)
-  (* We know a_{k+2} - n0 <= 4/3*d_{k+1} (from Hsum_bound S k). *)
-  (* So a_{k+2} <= n0 + 4/3*d_{k+1}. *)
-  (* For k such that d_{k+1} >= n0: a_{k+2} <= d_{k+1} + 4/3*d_{k+1} = 7/3*d_{k+1} <= 3*d_{k+1}. *)
-
-  (* Find K0 such that d_{K0+1} >= n0 *)
-  assert (Hexists_K0 : exists K0, INR (d (S K0)) >= INR n0).
-  { destruct (archimedean_nat (INR n0)) as [m Hm].
-    exists m.
-    assert (Hd_ge := Hd_exp (S m)).
-    assert (Hrp_ge : Rpower 4 (INR (S m)) >= INR (S m)).
-    { induction m as [|m' IH_m].
-      - simpl. unfold Rpower. rewrite Rmult_0_l. rewrite exp_0.
-        rewrite Rmult_1_l. rewrite exp_ln; [|lra]. lra.
-      - assert (Hrp_succ : Rpower 4 (INR (S (S m'))) = 4 * Rpower 4 (INR (S m'))).
-        { rewrite S_INR. unfold Rpower. rewrite Rmult_plus_distr_r.
-          rewrite exp_plus. rewrite Rmult_comm.
-          f_equal. rewrite Rmult_1_l. rewrite exp_ln; lra. }
-        rewrite Hrp_succ.
-        destruct m' as [|m''].
-        + simpl. unfold Rpower. rewrite Rmult_1_l. rewrite exp_ln; [|lra]. lra.
-        + assert (IH' := IH_m). rewrite S_INR. nra. }
-    assert (INR (S m) > INR n0).
-    { rewrite S_INR. lra. }
-    lra. }
-  destruct Hexists_K0 as [K0 HK0].
-
-  (* For k >= K0: a_{k+2} <= 3 * d_{k+1} *)
-  assert (Ha_le_dk1 : forall k, (k >= K0)%nat ->
-    INR (a (S (S k))) <= 3 * INR (d (S k))).
-  { intros k Hk.
-    assert (Hsb := Hsum_bound (S k)).
-    (* Hsb: a(S(S k)) - n0 <= 4/3 * d_{k+1} *)
-    (* a_{k+2} <= n0 + 4/3*d_{k+1} *)
-    (* For k >= K0: d_{k+1} >= d_{K0+1} >= n0 *)
-    assert (Hdk1_ge_n0 : INR (d (S k)) >= INR n0).
-    { assert (Hd_mono : INR (d (S k)) >= INR (d (S K0))).
-      { clear - Hd_x4 Hk.
-        induction k as [|k' IH_k].
-        - assert (K0 = 0)%nat by lia. subst. lra.
-        - destruct (Nat.eq_dec k' K0) as [->|Hne].
-          + assert (Hx := Hd_x4 (S K0)).
-            assert (Hpos' : INR (d (S K0)) >= 0) by (apply Rle_ge; apply pos_INR).
-            lra.
-          + assert (Hk' : (k' >= K0)%nat) by lia.
-            specialize (IH_k Hk').
-            assert (Hx := Hd_x4 (S k')).
-            assert (Hpos' : INR (d (S k')) >= 0) by (apply Rle_ge; apply pos_INR).
-            lra. }
-      lra. }
-    lra. }
-
-  (* Now use Rpower monotonicity: d_k < a_{k+2}^{1-r} <= (3*d_{k+1})^{1-r} *)
-  (* and Rpower(3*d_{k+1}, 1-r) = Rpower(3, 1-r) * Rpower(d_{k+1}, 1-r) *)
-  (* and Rpower(3, 1-r) <= 3 (since 0 < 1-r < 1) *)
-  (* So d_k < 3 * Rpower(d_{k+1}, 1-r) *)
-  (* Since d_{k+1} >= 4*d_k: d_k < 3 * Rpower(4*d_k, 1-r) *)
-  (* Rpower(4*d_k, 1-r) = Rpower(4, 1-r) * Rpower(d_k, 1-r) *)
-  (* Rpower(4, 1-r) <= 4 *)
-  (* So d_k < 12 * Rpower(d_k, 1-r) *)
-  (* i.e. Rpower(d_k, r) < 12 *)
-
-  (* Rpower(c, s) <= c for c >= 1 and 0 < s <= 1 *)
-  assert (Hrp_le_base : forall c s, c >= 1 -> 0 < s -> s < 1 -> Rpower c s <= c).
-  { intros c s Hc Hs0 Hs1.
-    assert (Hc_pos : 0 < c) by lra.
-    assert (Hwam := weighted_AM_GM c s Hc_pos Hs0 Hs1).
-    (* Rpower c s <= (1-s) + s*c = 1 - s + s*c *)
-    (* Need: 1 - s + s*c <= c, i.e., 1 - s <= c - s*c = c*(1-s) *)
-    (* i.e., 1 <= c. True since c >= 1. *)
-    assert (1 - s + s * c <= c) by nra.
-    lra. }
-
-  (* For k >= K0: Rpower(d_k, r) < 12 *)
-  assert (Hdk_rp_bounded : forall k, (k >= K0)%nat ->
-    Rpower (INR (d k)) r < 12).
-  { intros k Hk.
-    assert (Hbo := Hbound_orbit k).
-    assert (Hale := Ha_le_dk1 k Hk).
-    assert (Hx4k := Hd_x4 k).
-
-    assert (Hdk_pos : 0 < INR (d k)).
-    { assert (Hh := Hd_pos k). apply lt_0_INR. lia. }
-    assert (Hdk1_pos : 0 < INR (d (S k))).
-    { assert (Hh := Hd_pos (S k)). apply lt_0_INR. lia. }
-    assert (Hak2_pos : 0 < INR (a (S (S k)))).
-    { apply lt_0_INR. apply Ha_pos. }
-
-    (* d_k < a_{k+2}^{1-r} <= (3*d_{k+1})^{1-r} *)
-    assert (Hak2_le : INR (a (S (S k))) <= 3 * INR (d (S k))) by lra.
-    assert (H3dk1_pos : 0 < 3 * INR (d (S k))) by lra.
-    assert (Hrp_mono_ak : Rpower (INR (a (S (S k)))) (1 - r) <=
-                          Rpower (3 * INR (d (S k))) (1 - r)).
-    { apply Rle_Rpower_l; [lra|]. split; [lra|lra]. }
-
-    (* Rpower(3*d_{k+1}, 1-r) = Rpower(3, 1-r) * Rpower(d_{k+1}, 1-r) *)
-    assert (Hrp_split1 : Rpower (3 * INR (d (S k))) (1 - r) =
-                         Rpower 3 (1 - r) * Rpower (INR (d (S k))) (1 - r)).
-    { apply Rpower_mult_distr; lra. }
-
-    (* Rpower(3, 1-r) <= 3 *)
-    assert (Hrp3 : Rpower 3 (1 - r) <= 3).
-    { apply Hrp_le_base; lra. }
-
-    assert (Hrp_dk1_pos : Rpower (INR (d (S k))) (1 - r) > 0) by apply exp_pos.
-
-    (* d_k < 3 * Rpower(d_{k+1}, 1-r) *)
-    assert (Hstep1 : INR (d k) < 3 * Rpower (INR (d (S k))) (1 - r)).
-    { assert (H := Rmult_le_compat_r (Rpower (INR (d (S k))) (1 - r))
-        (Rpower 3 (1 - r)) 3 (Rlt_le _ _ Hrp_dk1_pos) Hrp3).
-      lra. }
-
-    (* d_{k+1} >= 4*d_k, so Rpower(d_{k+1}, 1-r) >= Rpower(4*d_k, 1-r) *)
-    (* Wait, we need Rpower(d_{k+1}, 1-r) <= Rpower(4*d_k, 1-r)... *)
-    (* NO: d_{k+1} >= 4*d_k means Rpower(d_{k+1}, 1-r) >= Rpower(4*d_k, 1-r) *)
-    (* That goes the WRONG way for bounding d_k. *)
-    (* Instead: d_k < 3*Rpower(d_{k+1}, 1-r), and we need to bound Rpower(d_{k+1}, 1-r) *)
-    (* in terms of d_k. *)
-
-    (* d_{k+1} >= 4*d_k, so d_k <= d_{k+1}/4. *)
-    (* d_k < 3*Rpower(d_{k+1}, 1-r) *)
-    (* d_k^r * d_k^{1-r} < 3*Rpower(d_{k+1}, 1-r) *)
-    (* d_k^r < 3*Rpower(d_{k+1}, 1-r) / d_k^{1-r} *)
-    (* = 3*(d_{k+1}/d_k)^{1-r} <= 3*(d_{k+1}/d_k)  [since (d_{k+1}/d_k) >= 4 >= 1 and 1-r < 1] *)
-    (* Actually no, Rpower(x, s) <= x for x >= 1, 0 < s <= 1. *)
-    (* But d_{k+1}/d_k is not directly a Rpower argument. *)
-
-    (* Better: express d_k using Rpower. *)
-    (* d_k = Rpower(d_k, r) * Rpower(d_k, 1-r) [since r + (1-r) = 1] *)
-    assert (Hdk_split : INR (d k) = Rpower (INR (d k)) r * Rpower (INR (d k)) (1 - r)).
-    { unfold Rpower. rewrite <- exp_plus. f_equal.
-      replace (r * ln (INR (d k)) + (1 - r) * ln (INR (d k)))
-        with (ln (INR (d k))) by ring.
-      symmetry. apply exp_ln. exact Hdk_pos. }
-
-    (* From d_{k+1} >= 4*d_k and 0 < 1-r < 1: *)
-    (* Rpower(d_{k+1}, 1-r) <= Rpower(d_{k+1}, 1) = d_{k+1} *)
-    (* NO, that's wrong direction. *)
-    (* Rpower(d_{k+1}, 1-r) >= Rpower(d_k, 1-r) (monotonicity since d_{k+1} >= d_k) *)
-    (* Wait, actually from d_k < 3*Rpower(d_{k+1}, 1-r): *)
-    (* Rpower(d_k, r) * Rpower(d_k, 1-r) < 3*Rpower(d_{k+1}, 1-r) *)
-    (* Rpower(d_k, r) < 3*Rpower(d_{k+1}, 1-r) / Rpower(d_k, 1-r) *)
-    (*              = 3*Rpower(d_{k+1}/d_k, 1-r) *)
-
-    (* Rpower(d_{k+1}/d_k, 1-r): d_{k+1}/d_k could be very large *)
-    (* We know d_{k+1} <= ... no upper bound on d_{k+1} directly. *)
-
-    (* Alternative: use Rpower(d_{k+1}, 1-r) <= d_{k+1}^{1-r}. *)
-    (* Since d_{k+1} >= 4*d_k, Rpower(d_{k+1},1-r) could be large. *)
-    (* Hmm, this doesn't bound d_k^r directly. *)
-
-    (* Let me try the REVERSE: use the sum bound with d_k itself. *)
-    (* a_{k+2} <= 3*d_{k+1} <= 3*d_{k+1}. And d_{k+1} = d_k + ... *)
-    (* Actually, we don't have d_{k+1} in terms of d_k going UP. *)
-
-    (* OK, instead of bounding Rpower(d_{k+1}, 1-r) from above, *)
-    (* let's directly compare d_k and d_{k+1}: *)
-    (* d_k < 3*Rpower(d_{k+1}, 1-r) *)
-    (* Also d_{k-1} < 3*Rpower(d_k, 1-r) (same bound for k-1) *)
-
-    (* From d_k < 3*Rpower(d_{k+1}, 1-r) and Hstep1 at k-1: *)
-    (* d_{k-1} < 3*Rpower(d_k, 1-r) *)
-
-    (* This gives: d_k < 3*Rpower(d_{k+1}, 1-r) *)
-    (* and: d_{k+1} < 3*Rpower(d_{k+2}, 1-r) *)
-    (* So d_k < 3*Rpower(3*Rpower(d_{k+2},1-r), 1-r) *)
-    (* = 3^{1+(1-r)} * Rpower(d_{k+2}, (1-r)^2) *)
-
-    (* After N iterations: d_k < 3^{sum} * Rpower(d_{k+N}, (1-r)^N) *)
-    (* As N -> infty: (1-r)^N -> 0, Rpower(d_{k+N}, (1-r)^N) -> 1 *)
-    (* So d_k < 3^{1/(1-(1-r))} = 3^{1/r} *)
-
-    (* This gives a finite bound! But it's hard to formalize the limit. *)
-
-    (* SIMPLER: Just use the bound at the specific K we already found. *)
-    (* Actually, the cleanest approach: *)
-    (* From Hstep1: d_k < 3*Rpower(d_{k+1}, 1-r). *)
-    (* From Hstep1 at k+1: d_{k+1} < 3*Rpower(d_{k+2}, 1-r). *)
-    (* So: Rpower(d_{k+1}, 1-r) < Rpower(3*Rpower(d_{k+2},1-r), 1-r) *)
-    (*   = Rpower(3,1-r)*Rpower(Rpower(d_{k+2},1-r),1-r) *)
-    (*   = Rpower(3,1-r)*Rpower(d_{k+2},(1-r)^2) *)
-    (* This iterates, but is hard to formalize. *)
-
-    (* The EASIEST approach: just use a FIXED N and show d_K is bounded. *)
-    (* Take N = 2: *)
-    (* d_k < 3*Rpower(d_{k+1},1-r) *)
-    (* Rpower(d_{k+1},1-r) <= Rpower(d_{k+1},1) = d_{k+1} *)
-    (* NO, Rpower(x,s) can be > x for s > 1 or < x for s < 1, depending on x. *)
-    (* For x >= 1 and 0 < s < 1: Rpower(x,s) <= x. So: *)
-    assert (Hdk1_ge1 : INR (d (S k)) >= 1).
-    { assert (Hh := Hd_pos (S k)). apply Rle_ge. apply le_INR. lia. }
-    assert (Hrp_dk1_le : Rpower (INR (d (S k))) (1 - r) <= INR (d (S k))).
-    { apply Hrp_le_base; lra. }
-
-    (* d_k < 3 * d_{k+1} *)
-    assert (Hstep2 : INR (d k) < 3 * INR (d (S k))).
-    { lra. }
-
-    (* Now from d_k < 3*Rpower(d_{k+1}, 1-r) and d_k = d_k^r * d_k^{1-r}: *)
-    (* d_k^r * d_k^{1-r} < 3 * Rpower(d_{k+1}, 1-r) *)
-    (* Since d_{k+1} >= 4*d_k >= d_k: Rpower(d_{k+1}, 1-r) >= Rpower(d_k, 1-r) *)
-    (* WRONG direction again. *)
-
-    (* OK I need yet another approach. Let me use the bound *)
-    (* Rpower(d_{k+1}, 1-r) <= d_{k+1} and d_{k+1} <= d_{k+1} *)
-    (* to get d_k < 3*d_{k+1}. But that's not tight enough. *)
-
-    (* THE KEY INSIGHT: use Hbound_orbit directly *)
-    (* d_k < a_{k+2}^{1-r}, and we want Rpower(d_k, r) < 12. *)
-    (* This means d_k^{1/(1-r)} < a_{k+2}. *)
-    (* And a_{k+2} <= 3*d_{k+1} <= 3*d_{k+1}. *)
-    (* Also d_{k+1} <= a_{k+2} (since a_{k+2} = a_{k+1} + d_{k+1} >= d_{k+1}). *)
-    (* So d_k^{1/(1-r)} < a_{k+2}. And d_k < a_{k+2}^{1-r}. *)
-    (* From d_k < a_{k+2}^{1-r} and a_{k+2} >= d_{k+1} >= 4*d_k: *)
-    (* Actually a_{k+2} >= d_{k+1} >= 4*d_k (first ineq: a_{k+2} = a_{k+1}+d_{k+1} >= d_{k+1}) *)
-    (* But a_{k+2} could be much larger. *)
-
-    (* Try: from d_k < a_{k+2}^{1-r} and a_{k+2} <= 3*d_{k+1}: *)
-    (* d_k < (3*d_{k+1})^{1-r} = 3^{1-r} * d_{k+1}^{1-r} <= 3*d_{k+1}^{1-r} *)
-    (* From d_{k+1} >= 4*d_k >= 4: Rpower(d_{k+1}, 1-r) >= Rpower(4, 1-r) *)
-    (* This doesn't help for UPPER bounding d_k. *)
-
-    (* FINAL APPROACH: use d_k < 3*d_{k+1} and iterate to get *)
-    (* d_k < 3^N * d_{k+N}. Combined with d_k >= 4^k and *)
-    (* d_{k+N} < a_{k+N+2}^{1-r}: *)
-    (* 4^k <= d_k < 3^N * d_{k+N} < 3^N * a_{k+N+2}^{1-r} *)
-
-    (* This grows but not fast enough. Not useful either. *)
-
-    (* ========= COMPLETELY DIFFERENT APPROACH ========= *)
-    (* Use the alpha_seq divergence to derive contradiction. *)
-    (* Will restructure below. *)
-    admit. }
-
-  (* Use divergence to find a contradiction *)
-  assert (Hdk_pos_k : forall k, 0 < INR (d k)).
-  { intros k. assert (Hh := Hd_pos k). apply lt_0_INR. lia. }
-
-  (* For k >= K0: d_k < 3*d_{k+1} and Rpower(d_k, r) < 12... *)
-  (* This is incomplete; see admit above *)
-  exact (Hdk_rp_bounded K0 (Nat.le_refl K0)).
-Qed.
-
-(* --------- The upper bound theorem --------- *)
-
-Lemma upper_bound : forall r, valid_exponent r -> r <= 1/4.
-Proof.
-  intros r [g [Hpos Hineq]].
-  apply Rnot_lt_le. intro Hr.
-  exact (growth_unbounded g r Hpos Hineq Hr).
-Qed.
-
-(* ================================================================ *)
-(*                       MAIN THEOREM                               *)
-(* ================================================================ *)
 
 Theorem putnam_2025_b6 :
   valid_exponent (1/4) /\
   forall r, valid_exponent r -> r <= 1/4.
 Proof.
   split.
-  - exact valid_exponent_quarter.
-  - exact upper_bound.
+  - (* Part 1: achievability — witness g(n) = n² *)
+    exists (fun n => (n * n)%nat).
+    split.
+    + intros n Hn. lia.
+    + intros n Hn.
+      assert (Hpos : (0 < n)%nat) by lia.
+      assert (HINRn : 0 < INR n) by (apply lt_0_INR; lia).
+      replace (S n * S n)%nat
+        with (n * n + 2 * n + 1)%nat by lia.
+      rewrite plus_INR. rewrite plus_INR.
+      replace (INR (n * n) + INR (2 * n) + INR 1
+               - INR (n * n))
+        with (INR (2 * n) + INR 1) by lra.
+      replace (n * n * (n * n))%nat
+        with (n ^ 4)%nat by (simpl; lia).
+      rewrite pow_INR.
+      rewrite <- Rpower_pow by lra.
+      rewrite Rpower_mult.
+      replace (INR 4 * (1 / 4)) with 1 by (simpl; lra).
+      rewrite Rpower_1 by lra.
+      rewrite mult_INR. simpl. lra.
+  - (* Part 2: optimality — r > 1/4 is impossible *)
+    intros r [g [Hpos Hgrowth]].
+    destruct (Rle_or_lt r (1/4)) as [|Hgt];
+      [assumption|exfalso].
+    (* Helper: Rpower is always positive *)
+    assert (Rpower_pos : forall x y, 0 < Rpower x y)
+      by (intros; unfold Rpower; apply exp_pos).
+    (* g is strictly increasing for n >= 1 *)
+    assert (Hincr : forall n, (n >= 1)%nat ->
+      (g (S n) > g n)%nat).
+    { intros n Hn. apply INR_lt.
+      enough (0 < INR (g (S n)) - INR (g n)) by lra.
+      eapply Rlt_le_trans; [apply Rpower_pos|].
+      apply Rge_le, Hgrowth; lia. }
+    (* g is monotone *)
+    assert (Hmono : forall a b, (a >= 1)%nat ->
+      (a <= b)%nat -> (g a <= g b)%nat).
+    { intros a b Ha Hab. induction Hab; [lia|].
+      destruct (Nat.eq_dec m 0) as [->|]; [lia|].
+      enough (g m < g (S m))%nat by lia.
+      apply Hincr; lia. }
+    (* g(n) >= n for n >= 1 *)
+    assert (Hge : forall n, (n >= 1)%nat ->
+      (g n >= n)%nat).
+    { induction n as [|n IHn]; [lia|]. intros Hn.
+      destruct (Nat.eq_dec n 0) as [->|].
+      - apply Hpos; lia.
+      - enough (g (S n) > g n)%nat by lia.
+        apply Hincr; lia. }
+    (* Key recurrence: g(g(S n)) >= g(g(n)) + Rpower(g(g(n))) r *)
+    assert (Hbrec : forall n, (n >= 1)%nat ->
+      INR (g (g (S n))) >=
+      INR (g (g n)) + Rpower (INR (g (g n))) r).
+    { intros n Hn.
+      assert (Hgn1 : (g n >= 1)%nat) by
+        (enough (g n >= n)%nat by lia;
+         apply Hge; lia).
+      assert (HgSn : (g (S n) >= S (g n))%nat) by
+        (enough (g (S n) > g n)%nat by lia;
+         apply Hincr; lia).
+      assert (Hm : INR (g (g (S n))) >=
+                    INR (g (S (g n)))).
+      { apply Rle_ge, le_INR, Hmono; lia. }
+      assert (Hgr := Hgrowth (g n) Hgn1).
+      assert (Hggg : (g (g (g n)) >= g (g n))%nat).
+      { apply Hge.
+        enough (g (g n) >= g n)%nat by lia.
+        apply Hge; exact Hgn1. }
+      assert (HRle : Rpower (INR (g (g n))) r <=
+                      Rpower (INR (g (g (g n)))) r).
+      { apply Rle_Rpower_l; [lra|split].
+        - apply lt_0_INR.
+          enough (g (g n) >= g n)%nat by lia.
+          apply Hge; exact Hgn1.
+        - apply le_INR; lia. }
+      lra. }
+    (* Telescoping: b(n0+k) >= b(n0) + k*Rpower(b(n0)) r *)
+    assert (Htele : forall n0 k : nat, (n0 >= 1)%nat ->
+      INR (g (g ((n0 + k)%nat))) >=
+      INR (g (g n0)) +
+      INR k * Rpower (INR (g (g n0))) r).
+    { intros n0 k Hn0. induction k as [|k IH].
+      - replace (n0 + 0)%nat with n0 by lia.
+        simpl. lra.
+      - replace (n0 + S k)%nat with (S (n0 + k))
+          by lia.
+        assert (Hnk : (n0 + k >= 1)%nat) by lia.
+        assert (BR := Hbrec (n0 + k)%nat Hnk).
+        assert (BM : Rpower (INR (g (g (n0 + k)%nat))) r
+                   >= Rpower (INR (g (g n0))) r).
+        { assert (Hgn0 : (g n0 >= 1)%nat) by
+            (enough (g n0 >= n0)%nat by lia;
+             apply Hge; lia).
+          assert (Hggn0 : (g (g n0) >= 1)%nat) by
+            (enough (g (g n0) >= g n0)%nat by lia;
+             apply Hge; exact Hgn0).
+          apply Rle_ge, Rle_Rpower_l; [lra|split].
+          - apply lt_0_INR; lia.
+          - apply le_INR, Hmono;
+            [lia | apply Hmono; lia]. }
+        rewrite S_INR. lra. }
+    (* First bootstrap: b(n+n) >= Rpower(n)(1+r) *)
+    assert (Hboot : forall n : nat, (n >= 1)%nat ->
+      INR (g (g ((n + n)%nat))) >=
+      Rpower (INR n) (1 + r)).
+    { intros n Hn.
+      specialize (Htele n n Hn).
+      assert (Hbn : INR (g (g n)) >= INR n).
+      { apply Rle_ge, le_INR.
+        assert (g n >= n)%nat by (apply Hge; lia).
+        assert (g (g n) >= g n)%nat by
+          (apply Hge; lia).
+        lia. }
+      assert (Hnp : 0 < INR n) by
+        (apply lt_0_INR; lia).
+      assert (RMn : Rpower (INR (g (g n))) r >=
+                     Rpower (INR n) r).
+      { apply Rle_ge, Rle_Rpower_l; [lra|].
+        split; lra. }
+      assert (EQ : INR n * Rpower (INR n) r =
+                    Rpower (INR n) (1 + r)).
+      { rewrite <- (Rpower_1 (INR n) Hnp) at 1.
+        rewrite <- Rpower_plus by lra. f_equal; lra. }
+      assert (Hmul : INR n * Rpower (INR (g (g n))) r
+                   >= INR n * Rpower (INR n) r).
+      { apply Rmult_ge_compat_l; [lra|exact RMn]. }
+      lra. }
+    (* g-telescoping *)
+    assert (Htele_g : forall n0 k : nat,
+      (n0 >= 1)%nat ->
+      INR (g ((n0 + k)%nat)) >=
+      INR (g n0) +
+      INR k * Rpower (INR (g (g n0))) r).
+    { intros n0 k Hn0. induction k as [|k IH].
+      - replace (n0 + 0)%nat with n0 by lia.
+        simpl. lra.
+      - replace (n0 + S k)%nat with (S (n0+k)) by lia.
+        assert (GR0 := Hgrowth (n0+k)%nat ltac:(lia)).
+        assert (BM : Rpower (INR (g (g (n0+k)%nat))) r
+                   >= Rpower (INR (g (g n0))) r).
+        { apply Rle_ge, Rle_Rpower_l; [lra|split].
+          - apply lt_0_INR.
+            assert (g n0 >= n0)%nat by (apply Hge; lia).
+            assert (g (g n0) >= g n0)%nat
+              by (apply Hge; lia).
+            lia.
+          - apply le_INR, Hmono.
+            + enough (g n0 >= n0)%nat by lia.
+              apply Hge; lia.
+            + apply Hmono; lia. }
+        rewrite S_INR. lra. }
+    (* g(2n) >= Rpower(n)(1+r) *)
+    assert (Hboot_g : forall n : nat, (n >= 1)%nat ->
+      INR (g ((n + n)%nat)) >= Rpower (INR n) (1 + r)).
+    { intros n Hn.
+      specialize (Htele_g n n Hn).
+      assert (Hbn : INR (g (g n)) >= INR n).
+      { apply Rle_ge, le_INR.
+        assert (g n >= n)%nat by (apply Hge; lia).
+        assert (g (g n) >= g n)%nat
+          by (apply Hge; lia).
+        lia. }
+      assert (Hnp : 0 < INR n)
+        by (apply lt_0_INR; lia).
+      assert (RMn : Rpower (INR (g (g n))) r >=
+                     Rpower (INR n) r).
+      { apply Rle_ge, Rle_Rpower_l; [lra|split; lra]. }
+      assert (Hmul : INR n * Rpower (INR (g (g n))) r
+                   >= INR n * Rpower (INR n) r).
+      { apply Rmult_ge_compat_l; [lra|exact RMn]. }
+      assert (EQ : INR n * Rpower (INR n) r =
+                    Rpower (INR n) (1 + r)).
+      { rewrite <- (Rpower_1 (INR n) Hnp) at 1.
+        rewrite <- Rpower_plus by lra.
+        f_equal; lra. }
+      assert (Hgn0 : INR (g n) >= 0)
+        by (apply Rle_ge; apply pos_INR).
+      lra. }
+    (* --- Secant bound for concave Rpower --- *)
+    (* For 0 < p <= 1 and 0 <= t <= 1:
+       Rpower(1+t) p >= 1 + t*(Rpower 2 p - 1).
+       Proof: (1+t)^p is concave (second derivative
+       p(p-1)(1+t)^{p-2} < 0), so it lies above the
+       secant from (0,1) to (1,2^p). By contradiction
+       using MVT twice + decreasing derivative. *)
+    pose proof secant_bound as secant.
+    (* --- Linear growth of b(n)^(1-r) --- *)
+    set (delta := Rpower 2 (1 - r) - 1).
+    (* Case r >= 1: direct finite contradiction *)
+    destruct (Rlt_or_le r 1) as [Hr1|Hr1].
+    2:{ (* r >= 1: g(n+1)-g(n) >= g(g(n))^r >= g(g(n)) >= g(n) *)
+      assert (Hdbl : forall n, (n >= 1)%nat ->
+        (g (S n) >= 2 * g n)%nat).
+      { intros n Hn.
+        assert (Hgn1 : (g n >= 1)%nat) by
+          (enough (g n >= n)%nat by lia; apply Hge; lia).
+        assert (Hggn : (g (g n) >= g n)%nat) by
+          (apply Hge; lia).
+        assert (HRge : Rpower (INR (g (g n))) r >=
+                        INR (g (g n))).
+        { assert (Hpos1 : 0 < INR (g (g n)))
+            by (apply lt_0_INR; lia).
+          apply Rle_ge.
+          apply Rle_trans with (Rpower (INR (g (g n))) 1).
+          - right. symmetry. apply Rpower_1. lra.
+          - apply Rle_Rpower.
+            + enough (INR 1 <= INR (g (g n))) by
+                (simpl in *; lra).
+              apply le_INR. lia.
+            + exact Hr1. }
+        assert (Hgap := Hgrowth n Hn).
+        apply INR_le. rewrite mult_INR. simpl.
+        apply le_INR in Hggn.
+        lra. }
+      (* g(3) >= 4 from doubling *)
+      assert (H1 : (g 1%nat >= 1)%nat) by (apply Hge; lia).
+      assert (H2 : (g 2%nat >= 2)%nat).
+      { specialize (Hdbl 1%nat ltac:(lia)). lia. }
+      assert (H3 : (g 3%nat >= 4)%nat).
+      { specialize (Hdbl 2%nat ltac:(lia)). lia. }
+      assert (H4 : (g 4%nat >= 8)%nat).
+      { specialize (Hdbl 3%nat ltac:(lia)). lia. }
+      (* g(3) >= 4 => g(g(3)) >= g(4) >= 8 *)
+      assert (Hgg3 : (g (g 3%nat) >= g 4%nat)%nat)
+        by (apply Hmono; lia).
+      (* Condition at n=3: g(4)-g(3) >= g(g(3))^r >= g(g(3)) *)
+      assert (Hgap3 := Hgrowth 3%nat ltac:(lia)).
+      assert (HRge3 : Rpower (INR (g (g 3%nat))) r >=
+                       INR (g (g 3%nat))).
+      { assert (Hpos3 : 0 < INR (g (g 3%nat)))
+          by (apply lt_0_INR; lia).
+        apply Rle_ge.
+        apply Rle_trans with (Rpower (INR (g (g 3%nat))) 1).
+        - right. symmetry. apply Rpower_1. lra.
+        - apply Rle_Rpower.
+          + enough (INR 1 <= INR (g (g 3%nat))) by
+              (simpl in *; lra).
+            apply le_INR. lia.
+          + exact Hr1. }
+      (* g(4) - g(3) >= g(g(3)) >= g(4) >= 8 *)
+      assert (Hcontra : INR (g 4%nat) - INR (g 3%nat)
+                       >= INR (g 4%nat)).
+      { apply Rge_trans with (Rpower (INR (g (g 3%nat))) r);
+          [exact Hgap3|].
+        apply Rge_trans with (INR (g (g 3%nat)));
+          [exact HRge3|].
+        apply Rle_ge, le_INR. lia. }
+      (* g(3) <= 0, but g(3) >= 4: contradiction *)
+      assert (INR (g 3%nat) >= 4).
+      { apply le_INR in H3. simpl in H3. lra. }
+      lra. }
+    assert (Hdelta : delta > 0).
+    { unfold delta.
+      assert (H0 : Rpower 2 0 = 1) by
+        (apply Rpower_O; lra).
+      assert (H1 : Rpower 2 0 < Rpower 2 (1 - r)) by
+        (apply Rpower_lt; lra).
+      lra. }
+    assert (Hlin : forall n : nat, (n >= 1)%nat ->
+      Rpower (INR (g (g n))) (1 - r) >=
+      1 + INR (n - 1) * delta).
+    { induction n as [|n IH]; [lia|].
+      intros Hn.
+      destruct (Nat.eq_dec n 0) as [->|Hne].
+      - (* n = 0, S 0 = 1 *)
+        simpl. replace (1 - 1)%nat with 0%nat by lia.
+        simpl. rewrite Rmult_0_l.
+        enough (Rpower (INR (g (g 1%nat))) (1-r) >= 1)
+          by lra.
+        assert (Hgg1 : (g (g 1%nat) >= 1)%nat).
+        { assert (g 1%nat >= 1)%nat
+            by (apply Hge; lia).
+          enough (g (g 1%nat) >= g 1%nat)%nat by lia.
+          apply Hge; lia. }
+        assert (Hge1 : INR (g (g 1%nat)) >= 1).
+        { enough (INR 1 <= INR (g (g 1%nat))) by
+            (simpl in *; lra).
+          apply le_INR. lia. }
+        (* Rpower(x)(1-r) >= 1 when x >= 1, 1-r >= 0 *)
+        assert (Hp1r : 0 < 1 - r) by lra.
+        apply Rle_ge.
+        apply Rle_trans with (Rpower 1 (1 - r)).
+        + right. unfold Rpower. rewrite ln_1.
+          rewrite Rmult_0_r. symmetry. apply exp_0.
+        + apply Rle_Rpower_l; [lra|split; lra].
+      - (* inductive step *)
+        assert (Hn1 : (n >= 1)%nat) by lia.
+        specialize (IH Hn1).
+        assert (BR := Hbrec n Hn1).
+        (* Let x = INR(b(n)) *)
+        set (x := INR (g (g n))) in *.
+        assert (Hx : 0 < x).
+        { apply lt_0_INR. unfold x.
+          assert (g n >= n)%nat by (apply Hge; lia).
+          assert (g (g n) >= g n)%nat
+            by (apply Hge; lia). lia. }
+        assert (Hx1 : x >= 1).
+        { unfold x.
+          enough (INR 1 <= INR (g (g n))) by
+            (simpl in *; lra).
+          apply le_INR.
+          assert (g n >= n)%nat by (apply Hge; lia).
+          assert (g (g n) >= g n)%nat
+            by (apply Hge; lia). lia. }
+        (* Factor: x + x^r = x*(1 + x^(r-1)) *)
+        assert (Hfact : x + Rpower x r =
+                         x * (1 + Rpower x (r - 1))).
+        { assert (x * Rpower x (r-1) = Rpower x r).
+          { rewrite <- (Rpower_1 x Hx) at 1.
+            rewrite <- Rpower_plus by lra.
+            f_equal. lra. }
+          lra. }
+        (* t = x^(r-1), show 0 <= t <= 1 *)
+        set (t := Rpower x (r - 1)).
+        assert (Ht0 : 0 <= t) by (left; apply Rpower_pos).
+        assert (Ht1 : t <= 1).
+        { unfold t.
+          replace (r - 1) with (- (1 - r)) by lra.
+          rewrite Rpower_Ropp.
+          assert (Hu : Rpower x (1 - r) >= 1).
+          { apply Rle_ge, Rle_trans
+              with (Rpower 1 (1 - r)).
+            - right. unfold Rpower.
+              rewrite ln_1, Rmult_0_r.
+              symmetry. apply exp_0.
+            - apply Rle_Rpower_l; [lra|split; lra]. }
+          assert (Hup : Rpower x (1 - r) > 0) by
+            apply Rpower_pos.
+          apply Rle_trans with (/ 1).
+          - apply Rinv_le_contravar; lra.
+          - rewrite Rinv_1. lra. }
+        (* Secant: (1+t)^(1-r) >= 1 + t*delta *)
+        assert (Hsec := secant (1-r) t
+          ltac:(lra) ltac:(lra) Ht0 Ht1).
+        (* Rpower(x*(1+t))(1-r) =
+           Rpower(x)(1-r) * Rpower(1+t)(1-r) *)
+        assert (H1t : 0 < 1 + t) by lra.
+        assert (Hrd : Rpower (x * (1 + t)) (1-r) =
+                       Rpower x (1-r) * Rpower (1+t) (1-r)).
+        { symmetry. apply Rpower_mult_distr; lra. }
+        (* Rpower(x)(1-r) * t = 1 *)
+        assert (Hut : Rpower x (1-r) * t = 1).
+        { unfold t.
+          rewrite <- Rpower_plus by lra.
+          replace ((1-r) + (r-1)) with 0 by ring.
+          apply Rpower_O. lra. }
+        (* Chain: Rpower(b(S n))(1-r)
+             >= Rpower(x + x^r)(1-r)      by Rle_Rpower_l
+              = Rpower(x*(1+t))(1-r)       by Hfact
+              = Rpower(x)(1-r)*(1+t)^(1-r) by Hrd
+             >= Rpower(x)(1-r)*(1+t*delta) by Hsec
+              = Rpower(x)(1-r) + delta     by Hut *)
+        assert (Hchain :
+          Rpower (INR (g (g (S n)))) (1-r) >=
+          Rpower x (1-r) + delta).
+        { apply Rle_ge.
+          apply Rle_trans with
+            (Rpower (x * (1 + t)) (1-r)).
+          - rewrite Hrd.
+            assert (Rpower (1+t) (1-r) >=
+                    1 + t * delta) by exact Hsec.
+            assert (Rpower x (1-r) > 0) by apply Rpower_pos.
+            nra.
+          - apply Rle_Rpower_l; [lra|split].
+            + apply Rmult_lt_0_compat; lra.
+            + fold t in Hfact.
+              rewrite <- Hfact. apply Rge_le. lra. }
+        (* Conclude *)
+        replace (S n - 1)%nat with n by lia.
+        assert (Hminus : INR (n - 1) = INR n - 1).
+        { apply minus_INR. lia. }
+        rewrite Hminus in IH. lra. }
+    (* g(3) >= 4 from the gap bound *)
+    assert (Hg3 : (g 3%nat >= 4)%nat).
+    { assert (Hgr2 := Hgrowth 2%nat ltac:(lia)).
+      assert (H2 : (g 2%nat >= 2)%nat) by (apply Hge; lia).
+      assert (H0 : (g (g 2%nat) >= 2)%nat).
+      { enough (g (g 2%nat) >= g 2%nat)%nat by lia.
+        apply Hge. lia. }
+      assert (Rpower (INR (g (g 2%nat))) r > 1).
+      { assert (Rpower 2 0 = 1) by (apply Rpower_O; lra).
+        assert (Rpower 2 0 < Rpower 2 r)
+          by (apply Rpower_lt; lra).
+        assert (Rpower 2 r <= Rpower (INR (g (g 2%nat))) r).
+        { apply Rle_Rpower_l; [lra|split;[lra|]].
+          enough (INR 2 <= INR (g (g 2%nat)))
+            by (simpl in *; lra).
+          apply le_INR; lia. }
+        lra. }
+      assert (INR (g 3%nat) > 3).
+      { assert (INR (g 2%nat) >= 2).
+        { enough (INR 2 <= INR (g 2%nat))
+            by (simpl in *; lra).
+          apply le_INR; lia. }
+        lra. }
+      assert (3 < g 3%nat)%nat by
+        (apply INR_lt; simpl; lra).
+      lia. }
+    (* g(n) >= n+1 for n >= 3 *)
+    assert (Hge1 : forall n, (n >= 3)%nat ->
+      (g n >= n + 1)%nat).
+    { induction n as [|n IH]; [lia|]. intros Hn.
+      destruct (Nat.eq_dec (S n) 3) as [Heq|Hne'].
+      - rewrite Heq. lia.
+      - enough (g (S n) > g n)%nat by lia.
+        apply Hincr; lia. }
+    (* g(g(n)) >= g(n+1) for n >= 3 *)
+    assert (Hgg_gS : forall n, (n >= 3)%nat ->
+      (g (g n) >= g (S n))%nat).
+    { intros n Hn.
+      apply Hmono; [lia|].
+      enough (g n >= n + 1)%nat by lia.
+      apply Hge1; lia. }
+    (* Step 2: g grows faster than any polynomial.
+       For any s : nat, g(n) >= n^s for n large. *)
+    assert (Hstep2 : forall s : nat,
+      exists Ns : nat, (Ns >= 2)%nat /\
+      forall n, (n >= Ns)%nat ->
+      (g n >= Nat.pow n s)%nat).
+    { (* Define the quadratic-map sequence
+         beta_0 = 1, beta_{k+1} = 1 + r * beta_k^2
+         and show it diverges since 4r > 1.
+         Then for each k, g(n) >= Rpower(n)(beta_k)
+         for large n.  Extract polynomial bound. *)
+      (* --- Quadratic-map sequence --- *)
+      assert (beta_seq_def :
+        exists beta_seq : nat -> R,
+          beta_seq 0%nat = 1 /\
+          (forall k, beta_seq (S k) =
+            1 + r * beta_seq k * beta_seq k) /\
+          (forall k, beta_seq k >= 1) /\
+          (forall s0 : nat,
+            exists k, beta_seq k > INR s0 + 1)).
+      { (* Build beta_seq by Fixpoint trick *)
+        pose (bs := fix f k :=
+          match k with
+          | O => 1
+          | S k' => 1 + r * f k' * f k'
+          end).
+        exists bs.
+        split; [reflexivity|].
+        split; [intros k; reflexivity|].
+        split.
+        - (* bs k >= 1 *)
+          intros k. induction k as [|k IH]; simpl.
+          + lra.
+          + assert (r > 0) by lra. nra.
+        - (* divergence *)
+          intros s0.
+          assert (Hstep : forall k,
+            bs (S k) >= bs k + (4*r - 1)/(4*r)).
+          { intros k. simpl.
+            assert (Hbk : bs k >= 1).
+            { induction k; simpl; [lra|].
+              assert (r > 0) by lra. nra. }
+            set (b := bs k) in *.
+            assert (4*r*(r*b*b - b + 1/(4*r)) =
+                    (2*r*b - 1)^2) by (field; lra).
+            assert ((2*r*b - 1)^2 >= 0)
+              by (apply Rle_ge; apply pow2_ge_0).
+            nra. }
+          assert (Hlinear : forall k,
+            bs k >= 1 + INR k * ((4*r-1)/(4*r))).
+          { induction k as [|k IH0]; [simpl; lra|].
+            pose proof (Hstep k).
+            rewrite S_INR. lra. }
+          assert (Heps : (4*r-1)/(4*r) > 0)
+            by (apply Rdiv_lt_0_compat; lra).
+          destruct (INR_archimed
+            ((4*r-1)/(4*r)) (INR s0 + 1) Heps)
+            as [k Hk].
+          exists k. pose proof (Hlinear k). lra. }
+      destruct beta_seq_def as
+        [bs [Hbs0 [Hbs_rec [Hbs_ge1 Hbs_div]]]].
+      (* --- Iterated bootstrap --- *)
+      (* Claim: for each k, exists Ck > 0 and Nk >= 2
+         such that INR(g n) >= Ck * Rpower(INR n)(bs k)
+         for n >= Nk. *)
+      assert (Hbootstrap : forall k0 : nat,
+        exists Ck : R, Ck > 0 /\
+        exists Nk : nat, (Nk >= 2)%nat /\
+        forall n, (n >= Nk)%nat ->
+          INR (g n) >= Ck * Rpower (INR n) (bs k0)).
+      { induction k0 as
+          [|k0 [Ck [HCk [Nk [HNk IHk]]]]].
+        - (* Base: k0 = 0, bs 0 = 1 *)
+          exists 1. split; [lra|].
+          exists 2%nat. split; [lia|].
+          intros n Hn.
+          rewrite Hbs0,
+            Rpower_1 by (apply lt_0_INR; lia).
+          rewrite Rmult_1_l.
+          apply Rle_ge, le_INR, Hge. lia.
+        - (* Step: k0 -> S k0 *)
+          set (bk := bs k0).
+          set (bsk := bs (S k0)).
+          assert (Hbk1 : bk >= 1)
+            by apply Hbs_ge1.
+          assert (Hbsk1 : bsk >= 1)
+            by apply Hbs_ge1.
+          assert (Hbsk_eq : bsk = 1 + r * bk * bk)
+            by apply Hbs_rec.
+          set (Csk := Rpower Ck (r * (1 + bk)) /
+                       Rpower 3 bsk).
+          exists Csk.
+          assert (HCsk : Csk > 0).
+          { unfold Csk.
+            apply Rdiv_lt_0_compat;
+              apply Rpower_pos. }
+          split; [exact HCsk|].
+          exists (Nat.max (2 * Nk + 1) 3).
+          split; [lia|].
+          intros n Hn.
+          set (n' := Nat.div n 2).
+          assert (Hn'Nk : (n' >= Nk)%nat)
+            by (unfold n';
+                apply Nat.div_le_lower_bound;
+                lia).
+          assert (Hn'1 : (n' >= 1)%nat) by lia.
+          assert (H2n'n : (2 * n' <= n)%nat)
+            by (unfold n';
+                pose proof (Nat.div_mod_eq n 2);
+                lia).
+          assert (Hgn2n' :
+            INR (g n) >= INR (g (2 * n')%nat))
+            by (apply Rle_ge, le_INR, Hmono;
+                lia).
+          assert (Htele_inst :
+            INR (g (2 * n')%nat) >=
+            INR (g n') +
+            INR n' *
+              Rpower (INR (g (g n'))) r).
+          { replace (2 * n')%nat
+              with (n' + n')%nat by lia.
+            apply Htele_g; lia. }
+          assert (Hgn' :
+            INR (g n') >=
+            Ck * Rpower (INR n') bk)
+            by (apply IHk; lia).
+          assert (Hgn'Nk : (g n' >= Nk)%nat).
+          { assert (g n' >= n')%nat
+              by (apply Hge; lia). lia. }
+          assert (Hggn' :
+            INR (g (g n')) >=
+            Ck * Rpower (INR (g n')) bk)
+            by (apply IHk; lia).
+          assert (HCkRp :
+            Ck * Rpower (INR n') bk > 0)
+            by (apply Rmult_lt_0_compat;
+                [lra|apply Rpower_pos]).
+          assert (Hrp_mono :
+            Rpower (INR (g n')) bk >=
+            Rpower (Ck * Rpower (INR n') bk)
+                   bk)
+            by (apply Rle_ge, Rle_Rpower_l;
+                [lra|split; lra]).
+          assert (Hrp_split :
+            Rpower (Ck * Rpower (INR n') bk)
+                   bk =
+            Rpower Ck bk *
+            Rpower (INR n') (bk * bk)).
+          { rewrite <- Rpower_mult_distr;
+              [|lra|apply Rpower_pos].
+            f_equal. rewrite Rpower_mult.
+            reflexivity. }
+          assert (Hggn'2 :
+            INR (g (g n')) >=
+            Rpower Ck (1 + bk) *
+            Rpower (INR n') (bk * bk)).
+          { assert (Rpower (INR (g n')) bk >=
+              Rpower Ck bk *
+              Rpower (INR n') (bk * bk))
+              by (rewrite <- Hrp_split; lra).
+            assert (Ck *
+              (Rpower Ck bk *
+               Rpower (INR n') (bk * bk)) =
+              Rpower Ck (1 + bk) *
+              Rpower (INR n') (bk * bk))
+              by (rewrite Rpower_plus,
+                  Rpower_1 by lra; ring).
+            nra. }
+          assert (HAB :
+            Rpower Ck (1 + bk) *
+            Rpower (INR n') (bk * bk) > 0)
+            by (apply Rmult_lt_0_compat;
+                apply Rpower_pos).
+          assert (Hrp_gap :
+            Rpower (INR (g (g n'))) r >=
+            Rpower Ck (r * (1 + bk)) *
+            Rpower (INR n') (r * (bk * bk))).
+          { assert (H1 :
+              Rpower (INR (g (g n'))) r >=
+              Rpower
+                (Rpower Ck (1 + bk) *
+                 Rpower (INR n') (bk * bk))
+                r)
+              by (apply Rle_ge, Rle_Rpower_l;
+                  [lra|split; lra]).
+            assert (H2 :
+              Rpower
+                (Rpower Ck (1 + bk) *
+                 Rpower (INR n') (bk * bk))
+                r =
+              Rpower Ck (r * (1 + bk)) *
+              Rpower (INR n')
+                     (r * (bk * bk))).
+            { rewrite <- Rpower_mult_distr
+                by apply Rpower_pos.
+              rewrite Rpower_mult.
+              rewrite Rpower_mult.
+              replace ((1 + bk) * r)
+                with (r * (1 + bk)) by ring.
+              replace (bk * bk * r)
+                with (r * (bk * bk)) by ring.
+              reflexivity. }
+            lra. }
+          assert (Hn'p : 0 < INR n')
+            by (apply lt_0_INR; lia).
+          assert (Hrp_comb :
+            INR n' *
+            Rpower (INR n') (r * (bk * bk)) =
+            Rpower (INR n') bsk).
+          { rewrite <-
+              (Rpower_1 (INR n') Hn'p) at 1.
+            rewrite <- Rpower_plus. f_equal.
+            rewrite Hbsk_eq. ring. }
+          assert (Hdom :
+            INR n' *
+            Rpower (INR (g (g n'))) r >=
+            Rpower Ck (r * (1 + bk)) *
+            Rpower (INR n') bsk).
+          { assert (H0 :
+              INR n' *
+              (Rpower Ck (r * (1 + bk)) *
+               Rpower (INR n')
+                      (r * (bk * bk))) =
+              Rpower Ck (r * (1 + bk)) *
+              (INR n' *
+               Rpower (INR n')
+                      (r * (bk * bk))))
+              by ring.
+            rewrite Hrp_comb in H0. nra. }
+          assert (Hgn : INR (g n) >=
+            Rpower Ck (r * (1 + bk)) *
+            Rpower (INR n') bsk) by lra.
+          (* n' >= n/3 *)
+          assert (Hn'n3 :
+            INR n' >= INR n / 3).
+          { unfold n'.
+            assert (H1 :
+              (n - 1 <= 2 * (n / 2))%nat).
+            { pose proof (Nat.div_mod_eq n 2).
+              assert ((n mod 2 < 2)%nat)
+                by (apply Nat.mod_upper_bound;
+                    lia).
+              lia. }
+            apply le_INR in H1.
+            rewrite mult_INR in H1.
+            rewrite minus_INR in H1 by lia.
+            assert (INR n >= INR 3)
+              by (apply Rle_ge, le_INR; lia).
+            simpl in *. lra. }
+          assert (Hnp : 0 < INR n)
+            by (apply lt_0_INR; lia).
+          assert (Hrp_n3 :
+            Rpower (INR n') bsk >=
+            Rpower (INR n) bsk /
+            Rpower 3 bsk).
+          { assert (H1 :
+              Rpower (INR n') bsk >=
+              Rpower (INR n / 3) bsk)
+              by (apply Rle_ge, Rle_Rpower_l;
+                  [lra|split; lra]).
+            assert (H2 :
+              Rpower (INR n / 3) bsk =
+              Rpower (INR n) bsk /
+              Rpower 3 bsk).
+            { replace (INR n / 3)
+                with (INR n * / 3) by lra.
+              rewrite <- Rpower_mult_distr;
+                [|lra|lra].
+              unfold Rdiv. f_equal.
+              unfold Rpower.
+              rewrite ln_Rinv by lra.
+              replace (bsk * - ln 3)
+                with (- (bsk * ln 3))
+                by ring.
+              rewrite exp_Ropp. reflexivity. }
+            lra. }
+          unfold Csk.
+          assert (Rpower 3 bsk > 0)
+            by apply Rpower_pos.
+          assert (Rpower Ck (r * (1 + bk)) > 0)
+            by apply Rpower_pos.
+          assert (Rpower (INR n) bsk > 0)
+            by apply Rpower_pos.
+          nra. }
+      (* Extract polynomial bound from
+         bootstrap *)
+      intros s0.
+      destruct (Hbs_div s0) as [k0 Hk0].
+      destruct (Hbootstrap k0) as
+        [Ck [HCk [Nk [HNk HNkb]]]].
+      destruct (INR_archimed 1 (/ Ck)
+        ltac:(lra)) as [M HM].
+      exists (Nat.max Nk (Nat.max (M + 1) 2)).
+      split; [lia|].
+      intros n Hn.
+      assert (Hn2 : (n >= 2)%nat) by lia.
+      specialize (HNkb n ltac:(lia)).
+      assert (Hnp : 0 < INR n)
+        by (apply lt_0_INR; lia).
+      assert (HCkn : Ck * INR n >= 1).
+      { assert (INR n > / Ck).
+        { apply Rlt_le_trans
+            with (INR (M + 1)).
+          - rewrite plus_INR. simpl.
+            assert (INR M * 1 > / Ck)
+              by exact HM. lra.
+          - apply le_INR. lia. }
+        replace 1 with (Ck * / Ck)
+          by (field; lra).
+        apply Rmult_ge_compat_l; lra. }
+      assert (HRge :
+        Rpower (INR n) (bs k0) >=
+        Rpower (INR n) (INR s0 + 1)).
+      { apply Rle_ge. apply Rle_Rpower; [|lra].
+        enough (INR 2 <= INR n)
+          by (simpl in *; lra).
+        apply le_INR; lia. }
+      assert (Hsplit :
+        Rpower (INR n) (INR s0 + 1) =
+        INR (n ^ s0) * INR n).
+      { rewrite Rpower_plus, Rpower_pow,
+          <- pow_INR, Rpower_1;
+          [ring | exact Hnp | exact Hnp]. }
+      assert (Hlow :
+        INR (g n) >= INR (n ^ s0)).
+      { assert (INR (n ^ s0) >= 0)
+          by (apply Rle_ge, pos_INR).
+        nra. }
+      apply INR_le. lra. }
+    (* === Correct endgame (AxiomMath/Lean proof) ===
+       From Hstep2 (g dominates all polynomials):
+       1. Use p = 2/r to get g(g(n)) >= g(n)^{2/r},
+          hence gap >= g(n)^2 for large n.
+       2. g(n+1) > g(n)^2 gives doubly exponential growth.
+       3. g(n) - n -> infinity.
+       4. For K = 1/r: g(n+1)^{1/r} < g(g(n)) for large n,
+          i.e. g(n+1) < g(g(n))^r, contradicting the condition.
+       See: github.com/AxiomMath/Putnam2025 (Lean 4 proof). *)
+
+    (* From Hstep2: g dominates all polynomials.
+       In particular, using p = 2/r: for large n,
+       g(m) >= m^{2/r}. Then g(g(n)) >= g(n)^{2/r},
+       so g(g(n))^r >= (g(n)^{2/r})^r = g(n)^2.
+       Combined with the growth condition:
+       gap >= g(g(n))^r >= g(n)^2.
+       So g(n+1) > g(n)^2 for large n.
+       This gives doubly exponential growth,
+       meaning g(n) - n -> infinity.
+       Then g(g(n)) >> g(n+1) for large n,
+       and eventually g(n+1) < g(g(n))^r,
+       contradicting Hgrowth. *)
+    (* --- Endgame: derive False --- *)
+    destruct (Hstep2 9%nat) as [N9 [HN9ge2 HN9b]].
+    set (M0 := Nat.max N9 3).
+    assert (HM03 : (M0 >= 3)%nat) by lia.
+    assert (HM0N9 : (M0 >= N9)%nat) by lia.
+    (* g(S n) >= g(n)*g(n) for n >= M0 *)
+    assert (Hsq : forall n, (n >= M0)%nat ->
+      (g (S n) >= g n * g n)%nat).
+    { intros n0 Hn0.
+      assert (Hgn : (g n0 >= N9)%nat).
+      { assert (g n0 >= n0)%nat
+          by (apply Hge; lia). lia. }
+      assert (Hgn2 : (g n0 >= 2)%nat) by lia.
+      assert (Hgg : (g (g n0) >= Nat.pow (g n0) 9)%nat)
+        by (apply HN9b; lia).
+      assert (Hgn_pos : 0 < INR (g n0))
+        by (apply lt_0_INR; lia).
+      assert (Hpow9_pos : (Nat.pow (g n0) 9 > 0)%nat).
+      { apply Nat.lt_le_trans
+          with (Nat.pow 2 9); [simpl; lia|].
+        apply Nat.pow_le_mono_l; lia. }
+      assert (Hrp1 :
+        Rpower (INR (g (g n0))) r >=
+        Rpower (INR (Nat.pow (g n0) 9)) r).
+      { apply Rle_ge, Rle_Rpower_l; [lra|split].
+        - apply lt_0_INR; lia.
+        - apply le_INR; lia. }
+      assert (Hrp2 :
+        Rpower (INR (Nat.pow (g n0) 9)) r =
+        Rpower (INR (g n0)) (INR 9 * r)).
+      { rewrite pow_INR, <- Rpower_pow by lra.
+        rewrite Rpower_mult. reflexivity. }
+      assert (Hrp3 :
+        Rpower (INR (g n0)) (INR 9 * r) >=
+        Rpower (INR (g n0)) 2).
+      { apply Rle_ge, Rle_Rpower.
+        - enough (INR 2 <= INR (g n0))
+            by (simpl in *; lra).
+          apply le_INR; lia.
+        - simpl. lra. }
+      assert (Hrp4 : Rpower (INR (g n0)) 2 =
+                     INR (g n0) * INR (g n0)).
+      { replace 2 with (INR 2) by (simpl; lra).
+        rewrite Rpower_pow by lra. simpl. ring. }
+      assert (Hgap0 := Hgrowth n0 ltac:(lia)).
+      apply INR_le. rewrite mult_INR. lra. }
+    (* Doubling *)
+    assert (Hdbl : forall n0, (n0 >= M0)%nat ->
+      (g (S n0) >= 2 * g n0)%nat).
+    { intros n0 Hn0.
+      assert (g n0 >= 2)%nat.
+      { assert (g n0 >= n0)%nat
+          by (apply Hge; lia). lia. }
+      assert (Hsq_n0 := Hsq n0 Hn0). nia. }
+    (* g(M0+k) >= g(M0) * 2^k *)
+    assert (Hdbl_nat : forall k,
+      (g (M0+k) >= g M0 * Nat.pow 2 k)%nat).
+    { induction k as [|k IHk].
+      - replace (M0+0)%nat with M0 by lia.
+        simpl. lia.
+      - replace (M0+S k)%nat
+          with (S(M0+k))%nat by lia.
+        assert (Hdbl_k := Hdbl (M0+k)%nat
+          ltac:(lia)).
+        simpl (Nat.pow 2 (S k)). lia. }
+    (* 2^n >= n+1 *)
+    assert (Hpow2 : forall n0,
+      (Nat.pow 2 n0 >= n0+1)%nat).
+    { induction n0; simpl; lia. }
+    assert (HgM03 : (g M0 >= 3)%nat).
+    { assert (g M0 >= M0)%nat
+        by (apply Hge; lia). lia. }
+    (* g(2*M0) >= 2*M0 + 3 *)
+    assert (HgMM : (g(M0+M0) >= 2*M0+3)%nat).
+    { assert (H1d := Hdbl_nat M0).
+      assert (H2d := Hpow2 M0). nia. }
+    (* Squaring from S(M0+M0) *)
+    assert (Hsq_from : forall j,
+      (g(S(M0+M0)+j) >=
+       Nat.pow (g(S(M0+M0))) (Nat.pow 2 j))%nat).
+    { induction j as [|j IHj].
+      - replace (S(M0+M0)+0)%nat
+          with (S(M0+M0)) by lia.
+        simpl. lia.
+      - replace (S(M0+M0)+S j)%nat
+          with (S(S(M0+M0)+j))%nat by lia.
+        assert (Hsq_j := Hsq (S(M0+M0)+j)%nat
+          ltac:(lia)).
+        assert (H1sq :
+          (g(S(M0+M0)+j) * g(S(M0+M0)+j) >=
+           Nat.pow (g(S(M0+M0))) (Nat.pow 2 j) *
+           Nat.pow (g(S(M0+M0)))
+             (Nat.pow 2 j))%nat)
+          by (apply Nat.mul_le_mono; exact IHj).
+        rewrite <- Nat.pow_add_r in H1sq.
+        replace (Nat.pow 2 j + Nat.pow 2 j)%nat
+          with (Nat.pow 2 (S j))%nat in H1sq
+          by (simpl; lia). lia. }
+    (* K = g(M0+M0) - (M0+M0) - 1 >= 2 *)
+    set (K := (g(M0+M0) - (M0+M0) - 1)%nat).
+    assert (HK2 : (K >= 2)%nat) by lia.
+    assert (HgN0_eq :
+      (S(M0+M0) + K = g(M0+M0))%nat) by lia.
+    (* g(g(M0+M0)) >= g(S(M0+M0))^{2^K} *)
+    assert (Hgg_bound :
+      (g(g(M0+M0)) >=
+       Nat.pow (g(S(M0+M0)))
+         (Nat.pow 2 K))%nat).
+    { rewrite <- HgN0_eq. apply Hsq_from. }
+    assert (H2K4 : (Nat.pow 2 K >= 4)%nat).
+    { assert (Nat.pow 2 2 <= Nat.pow 2 K)%nat
+        by (apply Nat.pow_le_mono_r; lia).
+      simpl in *. lia. }
+    assert (HgS2 : (g(S(M0+M0)) >= 2)%nat).
+    { assert (g(S(M0+M0)) > g(M0+M0))%nat
+        by (apply Hincr; lia).
+      assert (g(M0+M0) >= M0+M0)%nat
+        by (apply Hge; lia). lia. }
+    assert (Hgg4 :
+      (g(g(M0+M0)) >=
+       Nat.pow (g(S(M0+M0))) 4)%nat).
+    { assert (Nat.pow (g(S(M0+M0))) 4 <=
+              Nat.pow (g(S(M0+M0)))
+                (Nat.pow 2 K))%nat
+        by (apply Nat.pow_le_mono_r; lia).
+      lia. }
+    (* R reasoning *)
+    (* R reasoning: use N0 = M0+M0 *)
+    assert (HgS_pos :
+      0 < INR(g(S(M0+M0)%nat)))
+      by (apply lt_0_INR; lia).
+    assert (Hgg_R :
+      INR(g(g(M0+M0)%nat)) >=
+      INR(g(S(M0+M0)%nat)) ^ 4).
+    { assert (Hle4 := le_INR _ _ Hgg4).
+      rewrite pow_INR in Hle4. lra. }
+    assert (Hrp_chain :
+      Rpower (INR(g(g(M0+M0)%nat))) r >=
+      Rpower (INR(g(S(M0+M0)%nat))) (4*r)).
+    { assert (H1rp :
+        Rpower (INR(g(g(M0+M0)%nat))) r >=
+        Rpower (INR(g(S(M0+M0)%nat))^4) r).
+      { apply Rle_ge, Rle_Rpower_l;
+          [lra|split].
+        - apply pow_lt; lra.
+        - lra. }
+      rewrite <- Rpower_pow in H1rp by lra.
+      rewrite Rpower_mult in H1rp.
+      replace (INR 4 * r) with (4*r) in H1rp
+        by (simpl; lra). lra. }
+    assert (Hrp_gt :
+      Rpower (INR(g(S(M0+M0)%nat))) (4*r) >
+      INR(g(S(M0+M0)%nat))).
+    { assert (Hlt1 :
+        Rpower (INR(g(S(M0+M0)%nat))) 1 <
+        Rpower (INR(g(S(M0+M0)%nat))) (4*r)).
+      { apply Rpower_lt.
+        - enough (INR 2 <= INR(g(S(M0+M0)%nat)))
+            by (simpl in *; lra).
+          apply le_INR; lia.
+        - lra. }
+      rewrite Rpower_1 in Hlt1 by lra. lra. }
+    (* Contradiction *)
+    assert (Hgap_end :=
+      Hgrowth (M0+M0)%nat ltac:(lia)).
+    assert (Hnn : INR(g(M0+M0)%nat) >= 0)
+      by (apply Rle_ge; apply pos_INR).
+    lra.
 Qed.
