@@ -13,8 +13,7 @@
     This is the same problem as the classical ZArith/list phrasing, recast
     in MathComp so that the proof can reuse the Eulerian / descent-set
     development from [LLM4Rocq/mathcomp-eulerian] (Stanley, EC1 Cor. 1.6.5).
-    The proof lives in [solutions/proof_a5.v] (via [solutions/a5_bridge.v]
-    and [solutions/new_proof_a5.v]). *)
+    The proof lives in [solutions/proof_a5.v]. *)
 
 From mathcomp Require Import all_boot all_order fingroup perm.
 

@@ -1,8 +1,0 @@
--R solutions Putnam2025A5
-
--arg -w -arg -deprecated-library-file
--arg -w -arg -notation-overridden
-
-solutions/new_proof_a5.v
-solutions/a5_bridge.v
-solutions/proof_a5.v
