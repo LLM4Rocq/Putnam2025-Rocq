@@ -36,24 +36,21 @@ bringing the repository to **12/12 verified**:
 | putnam_2025_b6 | ✅ | ClassicalDedekindReals.sig_not_dec, ClassicalDedekindReals.sig_forall_dec, FunctionalExtensionality.functional_extensionality_dep, Classical_Prop.classic |
 
 A5 is proved axiom-free via the
-[mathcomp-eulerian](https://github.com/LLM4Rocq/mathcomp-eulerian) library
-(see [solutions/A5_NOTES.md](solutions/A5_NOTES.md)); B6 via a direct `r = 1/4`
-argument.
+[mathcomp-eulerian](https://github.com/LLM4Rocq/mathcomp-eulerian) library;
+B6 via a direct `r = 1/4` argument.
 
 ## Structure
 
 ```
 problems/       Formal problem statements (with Admitted)
 solutions/      Proofs
-_CoqProject     Build config for A5's solution modules
-Makefile        coq_makefile wrapper (builds A5's .vo modules)
 verify.py       Verification script
 ```
 
 A5 is library-backed: it reuses [LLM4Rocq/mathcomp-eulerian](https://github.com/LLM4Rocq/mathcomp-eulerian)
-— installed from git via opam (see Setup) — and needs MathComp; see
-[solutions/A5_NOTES.md](solutions/A5_NOTES.md). All other problems are
-self-contained and use only the Rocq standard library.
+— installed from git via opam (see Setup) — and needs MathComp; the header of
+[solutions/proof_a5.v](solutions/proof_a5.v) explains the reduction. All other
+problems are self-contained and use only the Rocq standard library.
 
 ## Verification
 
@@ -61,32 +58,48 @@ To relaunch the verification step (check that the solutions match the original p
 
 ### Setup
 
-- **Rocq / Coq** — `coqc` on your `PATH`
-- **MathComp** — required for A5 only (`all_ssreflect`, `fingroup`, `perm`, …)
-- **mathcomp-eulerian** — required for A5 only; installed from git via opam (below)
-- **pet** (from [coq-lsp](https://github.com/ejgallego/coq-lsp))
-- **Python 3.11+**
+Everything the proofs need fits in one dedicated opam switch. Using a fresh
+switch keeps these versions from colliding with the rest of your setup — in
+particular, A5 pulls in MathComp, which the other eleven problems do not use.
+
+```bash
+opam switch create putnam25 ocaml-base-compiler.5.2.1 --no-switch
+opam repo add rocq-released https://rocq-prover.org/opam/released \
+  --switch=putnam25 --rank=1
+
+# register the pin without installing, so the solver sees every constraint at once
+opam pin add --switch=putnam25 -n rocq-mathcomp-eulerian \
+  git+https://github.com/LLM4Rocq/mathcomp-eulerian.git#v0.1.0
+
+opam install --switch=putnam25 \
+  rocq-core.9.1.1 rocq-stdlib.9.0.0 \
+  rocq-mathcomp-ssreflect.2.5.0 rocq-mathcomp-algebra.2.5.0 \
+  coq-coquelicot.3.4.4 coq-lsp.0.2.5+9.1 \
+  rocq-mathcomp-eulerian
+
+opam switch putnam25 && eval $(opam env)   # activate it
+```
+
+`coq-lsp` is in there not as an editor tool but because it ships the `pet`
+binary that `verify.py` drives.
+
+The versions are not incidental. `coq-coquelicot` (needed by B2) requires
+`coq-mathcomp-ssreflect >= 1.6` with no upper bound, but does **not** build
+against MathComp 2.6.0 — `theories/Rcomplements.v` fails with *"Goal is not an
+equation"*. Holding MathComp at 2.5.0 is what makes Coquelicot and A5's
+`mathcomp-eulerian` coexist, and 2.5.0 is also the version A5 was verified
+against.
+
+And the Python side (3.11+):
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Build A5's dependencies
-
-A5 reuses the [`mathcomp-eulerian`](https://github.com/LLM4Rocq/mathcomp-eulerian)
-library. Install it from git with opam (pinned for reproducibility), then build
-A5's solution modules. The other eleven problems need no build step.
-
-```bash
-opam pin add rocq-mathcomp-eulerian \
-  git+https://github.com/LLM4Rocq/mathcomp-eulerian.git#v0.1.0
-make
-```
-
 ### Check the solutions
 ```bash
-python verify.py        # all 12 (run `make` first so a5 can resolve its library)
-python verify.py a5     # just A5
+python verify.py        # all 12
+python verify.py a5 b6  # a subset
 ```
 
 ## Citation
