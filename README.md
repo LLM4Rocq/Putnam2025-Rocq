@@ -32,7 +32,7 @@ bringing the repository to **12/12 verified**:
 
 | Problem | Status | Axioms |
 |---------|--------|--------|
-| putnam_2025_a5 | ✅ | _(none — axiom-free)_ |
+| putnam_2025_a5 | ✅ |  |
 | putnam_2025_b6 | ✅ | ClassicalDedekindReals.sig_not_dec, ClassicalDedekindReals.sig_forall_dec, FunctionalExtensionality.functional_extensionality_dep, Classical_Prop.classic |
 
 A5 is proved axiom-free via the
@@ -82,13 +82,6 @@ opam switch putnam25 && eval $(opam env)   # activate it
 
 `coq-lsp` is in there not as an editor tool but because it ships the `pet`
 binary that `verify.py` drives.
-
-The versions are not incidental. `coq-coquelicot` (needed by B2) requires
-`coq-mathcomp-ssreflect >= 1.6` with no upper bound, but does **not** build
-against MathComp 2.6.0 — `theories/Rcomplements.v` fails with *"Goal is not an
-equation"*. Holding MathComp at 2.5.0 is what makes Coquelicot and A5's
-`mathcomp-eulerian` coexist, and 2.5.0 is also the version A5 was verified
-against.
 
 And the Python side (3.11+):
 
